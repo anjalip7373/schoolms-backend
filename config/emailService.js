@@ -1,14 +1,17 @@
-const nodemailer = require('nodemailer');
+// const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 require('dotenv').config();
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+// const transporter = nodemailer.createTransport({
+//   service: 'gmail',
+//   auth: {
+//     user: process.env.EMAIL_USER,
+//     pass: process.env.EMAIL_PASS,
+//   },
+// });
+
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ─── GENERATE FEE RECEIPT PDF BUFFER ─────────────────────────
 const generateFeeReceiptPDFBuffer = (receipt) => {
@@ -182,7 +185,18 @@ const sendPasswordResetEmail = async (toEmail, userName, otp) => {
       </div>
     `
   };
-  return transporter.sendMail(mailOptions);
+  // return transporter.sendMail(mailOptions);
+
+  return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
 };
 
 // ─── SEND PASSWORD CHANGED EMAIL ──────────────────────────────
@@ -205,7 +219,18 @@ const sendPasswordChangedEmail = async (toEmail, userName) => {
       </div>
     `
   };
-  return transporter.sendMail(mailOptions);
+  // return transporter.sendMail(mailOptions);
+
+  return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
 };
 
 // ─── SEND ATTENDANCE NOTIFICATION ────────────────────────────
@@ -245,7 +270,18 @@ const sendAttendanceNotification = async (toEmail, parentName, studentName, clas
       </div>
     `
   };
-  return transporter.sendMail(mailOptions);
+  // return transporter.sendMail(mailOptions);
+
+  return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
 };
 
 // ─── SEND FEE PAYMENT EMAIL WITH PDF ─────────────────────────
@@ -292,7 +328,17 @@ const sendFeePaymentNotification = async (toEmail, receipt) => {
         contentType: 'application/pdf'
       }]
     };
-    return transporter.sendMail(mailOptions);
+    // return transporter.sendMail(mailOptions);
+    return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
   } catch (err) {
     console.error('Fee email error:', err.message);
     throw err;
@@ -352,7 +398,18 @@ const sendSalarySlipNotification = async (toEmail, slip) => {
         contentType: 'application/pdf'
       }]
     };
-    return transporter.sendMail(mailOptions);
+    // return transporter.sendMail(mailOptions);
+  return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
+
   } catch (err) {
     console.error('Salary email error:', err.message);
     throw err;
@@ -390,7 +447,18 @@ const sendBroadcastEmail = async (toEmail, toName, title, message, senderName) =
       </div>
     `
   };
-  return transporter.sendMail(mailOptions);
+  // return transporter.sendMail(mailOptions);
+
+  return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
 };
 
 // ─── WELCOME EMPLOYEE EMAIL ───────────────────────────────────
@@ -428,7 +496,18 @@ const sendEmployeeWelcomeEmail = async (toEmail, empName, empId, loginUserId, ro
       </div>
     `
   };
-  return transporter.sendMail(mailOptions);
+  // return transporter.sendMail(mailOptions);
+
+  return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
 };
 
 // ─── EMPLOYEE UPDATE EMAIL ────────────────────────────────────
@@ -456,7 +535,18 @@ const sendEmployeeUpdateEmail = async (toEmail, empName) => {
       </div>
     `
   };
-  return transporter.sendMail(mailOptions);
+  // return transporter.sendMail(mailOptions);
+
+  return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
 };
 
 // ─── WELCOME STUDENT EMAIL ────────────────────────────────────
@@ -489,7 +579,18 @@ const sendStudentWelcomeEmail = async (toEmail, studentName, rollNo, className) 
       </div>
     `
   };
-  return transporter.sendMail(mailOptions);
+  // return transporter.sendMail(mailOptions);
+
+  return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
 };
 
 // ─── STUDENT UPDATE EMAIL ─────────────────────────────────────
@@ -517,7 +618,17 @@ const sendStudentUpdateEmail = async (toEmail, studentName) => {
       </div>
     `
   };
-  return transporter.sendMail(mailOptions);
+  // return transporter.sendMail(mailOptions);
+  return resend.emails.send({
+  from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
+  to: mailOptions.to,
+  subject: mailOptions.subject,
+  html: mailOptions.html,
+  attachments: mailOptions.attachments?.map(a => ({
+    filename: a.filename,
+    content: a.content,
+  }))
+});
 };
 
 

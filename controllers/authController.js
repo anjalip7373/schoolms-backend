@@ -126,9 +126,18 @@ exports.resetPasswordRequest = async (req, res) => {
     }
 
     // ── Send WhatsApp OTP ──
+// if (user.phone) {
+//   sendPasswordResetWhatsApp(user.phone, user.full_name, otp)
+//     .catch(e => console.error('OTP WhatsApp failed:', e.message));
+// }
+
+console.log('User phone for WhatsApp OTP:', user.phone);
 if (user.phone) {
   sendPasswordResetWhatsApp(user.phone, user.full_name, otp)
+    .then(() => console.log('OTP WhatsApp sent to:', user.phone))
     .catch(e => console.error('OTP WhatsApp failed:', e.message));
+} else {
+  console.log('No phone number found for user — WhatsApp OTP skipped');
 }
 
     res.json({
