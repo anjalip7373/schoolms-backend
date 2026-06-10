@@ -3,12 +3,22 @@ const PDFDocument = require('pdfkit');
 require('dotenv').config();
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
+// if it is not working remove the above code from line 5 and un comment the below 12 lines
+//const transporter = nodemailer.createTransport({
+//  service: 'gmail',
+//  auth: {
+//    user: process.env.EMAIL_USER,
+//    pass: process.env.EMAIL_PASS,
+//  },
+//});
 
 // const { Resend } = require('resend');
 // const resend = new Resend(process.env.RESEND_API_KEY);
