@@ -344,3 +344,64 @@ const sendEmployeeUpdateEmail = async (toEmail, empName) => {
           <h1 style="margin:0;font-size:22px;font-weight:800;">🏫 SchoolMS</h1>
         </div>
         <div style="padding:28px;">
+          <p>Dear <strong>${empName}</strong>,</p>
+          <p style="color:#64748b;">Your staff profile has been updated. Time: <strong>${new Date().toLocaleString('en-IN')}</strong></p>
+        </div>
+      </div>`
+  });
+};
+
+// ─── WELCOME STUDENT EMAIL ────────────────────────────────────
+const sendStudentWelcomeEmail = async (toEmail, studentName, rollNo, className) => {
+  if (!toEmail) return;
+  return sendEmail({
+    to: toEmail,
+    subject: `Welcome to SchoolMS — Student Enrollment Confirmed`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#059669,#10b981);padding:28px;text-align:center;color:#fff;">
+          <h1 style="margin:0;font-size:22px;font-weight:800;">🏫 SchoolMS</h1>
+          <p style="margin:4px 0 0;opacity:0.8;font-size:13px;">Welcome, New Student!</p>
+        </div>
+        <div style="padding:28px;">
+          <p>Dear <strong>${studentName}</strong>,</p>
+          <table style="width:100%;border-collapse:collapse;">
+            <tr><td style="padding:8px;color:#64748b;font-weight:bold;">Roll No</td><td style="padding:8px;font-weight:700;color:#059669;">${rollNo}</td></tr>
+            <tr style="background:#f8fafc;"><td style="padding:8px;color:#64748b;font-weight:bold;">Class</td><td style="padding:8px;font-weight:700;">${className}</td></tr>
+          </table>
+        </div>
+      </div>`
+  });
+};
+
+// ─── STUDENT UPDATE EMAIL ─────────────────────────────────────
+const sendStudentUpdateEmail = async (toEmail, studentName) => {
+  if (!toEmail) return;
+  return sendEmail({
+    to: toEmail,
+    subject: `SchoolMS — Your Profile Has Been Updated`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#059669,#10b981);padding:28px;text-align:center;color:#fff;">
+          <h1 style="margin:0;font-size:22px;font-weight:800;">🏫 SchoolMS</h1>
+        </div>
+        <div style="padding:28px;">
+          <p>Dear <strong>${studentName}</strong>,</p>
+          <p style="color:#64748b;">Your student profile has been updated. Time: <strong>${new Date().toLocaleString('en-IN')}</strong></p>
+        </div>
+      </div>`
+  });
+};
+
+module.exports = {
+  sendPasswordResetEmail,
+  sendPasswordChangedEmail,
+  sendAttendanceNotification,
+  sendFeePaymentNotification,
+  sendSalarySlipNotification,
+  sendBroadcastEmail,
+  sendEmployeeWelcomeEmail,
+  sendEmployeeUpdateEmail,
+  sendStudentWelcomeEmail,
+  sendStudentUpdateEmail,
+};
