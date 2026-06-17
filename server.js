@@ -8,7 +8,10 @@ const PORT = process.env.PORT || 5000;
 app.use(cors({ 
   origin: [
     'http://localhost:3000',
-    'https://schoolms-frontend-one.vercel.app'
+    'https://schoolms-frontend-one.vercel.app',
+    'capacitor://localhost',
+    'https://localhost',
+    'http://localhost'
   ], 
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
