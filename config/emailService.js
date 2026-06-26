@@ -17,6 +17,14 @@ const sendEmail = async (mailOptions) => {
   });
 };
 
+// HELPER LOGIC: STRICT INDIA LOCAL TIME CAPTURE OVERRIDE FOR CLOUD CHIPS
+const getIndiaDateTimeString = () => {
+  return new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour12: true
+  });
+};
+
 // ─── GENERATE FEE RECEIPT PDF BUFFER ─────────────────────────
 const generateFeeReceiptPDFBuffer = (receipt) => {
   return new Promise((resolve, reject) => {
@@ -172,7 +180,7 @@ const sendPasswordChangedEmail = async (toEmail, userName) => {
           <p>Hello <strong>${userName}</strong>,</p>
           <p style="color:#64748b;">Your SchoolMS password has been changed successfully.</p>
           <p style="color:#64748b;">If you did not do this, contact your administrator immediately.</p>
-          <p style="color:#64748b;">Time: <strong>${new Date().toLocaleString('en-IN')}</strong></p>
+          <p style="color:#64748b;">Time: <strong>${getIndiaDateTimeString()}</strong></p>
         </div>
       </div>`
   });
@@ -345,7 +353,7 @@ const sendEmployeeUpdateEmail = async (toEmail, empName) => {
         </div>
         <div style="padding:28px;">
           <p>Dear <strong>${empName}</strong>,</p>
-          <p style="color:#64748b;">Your staff profile has been updated. Time: <strong>${new Date().toLocaleString('en-IN')}</strong></p>
+          <p style="color:#64748b;">Your student profile has been updated. Time: <strong>${getIndiaDateTimeString()}</strong></p>
         </div>
       </div>`
   });
@@ -387,7 +395,7 @@ const sendStudentUpdateEmail = async (toEmail, studentName) => {
         </div>
         <div style="padding:28px;">
           <p>Dear <strong>${studentName}</strong>,</p>
-          <p style="color:#64748b;">Your student profile has been updated. Time: <strong>${new Date().toLocaleString('en-IN')}</strong></p>
+          <p style="color:#64748b;">Your student profile has been updated. Time: <strong>${getIndiaDateTimeString()}</strong></p>
         </div>
       </div>`
   });

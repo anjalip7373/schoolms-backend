@@ -15,6 +15,14 @@ const formatPhone = (phone) => {
   return cleaned;
 };
 
+// HELPER LOGIC: STRICT INDIA LOCAL TIME CAPTURE OVERRIDE FOR TWILIO
+const getIndiaDateTimeString = () => {
+  return new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour12: true
+  });
+};
+
 const sendWhatsApp = async (toPhone, message) => {
   try {
     const formatted = formatPhone(toPhone);
@@ -54,7 +62,7 @@ const sendPasswordChangedWhatsApp = async (phone, userName) => {
     `🏫 *SchoolMS - Password Changed*\n\n` +
     `Hello *${userName}*,\n\n` +
     `✅ Your SchoolMS password has been changed successfully.\n\n` +
-    `🕐 Time: *${new Date().toLocaleString('en-IN')}*\n\n` +
+    `🕐 Time: *${getIndiaDateTimeString()}*\n\n` +
     `⚠ If you did not do this, contact your administrator immediately.\n\n` +
     `_SchoolMS - School Management System_`;
   return sendWhatsApp(phone, message);
@@ -146,7 +154,7 @@ const sendEmployeeUpdateWhatsApp = async (phone, empName) => {
     `🏫 *SchoolMS - Profile Updated*\n\n` +
     `Dear *${empName}*,\n\n` +
     `✅ Your staff profile has been updated.\n\n` +
-    `🕐 Time: *${new Date().toLocaleString('en-IN')}*\n\n` +
+    `🕐 Time: *${getIndiaDateTimeString()}*\n\n` +
     `⚠️ If you did not expect this change, contact your administrator.\n\n` +
     `_SchoolMS - School Management System_`;
   return sendWhatsApp(phone, message);
@@ -172,7 +180,7 @@ const sendStudentUpdateWhatsApp = async (phone, studentName) => {
     `🏫 *SchoolMS - Profile Updated*\n\n` +
     `Dear *${studentName}*,\n\n` +
     `✅ Your student profile has been updated.\n\n` +
-    `🕐 Time: *${new Date().toLocaleString('en-IN')}*\n\n` +
+    `🕐 Time: *${getIndiaDateTimeString()}*\n\n` +
     `⚠️ If you did not expect this change, contact your school administrator.\n\n` +
     `_SchoolMS - School Management System_`;
   return sendWhatsApp(phone, message);
