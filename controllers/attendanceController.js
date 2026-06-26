@@ -1,7 +1,5 @@
 const { sendAttendanceWhatsApp } = require('../config/whatsappService');
 const { sendAttendanceNotification } = require('../config/emailService');
-
-
 const pool = require('../config/db');
 
 const getTeacherClass = async (userId, role) => {
@@ -82,8 +80,8 @@ exports.saveAttendance = async (req, res) => {
         [rec.person_type, rec.person_id, attendance_date, rec.status, req.user.id, rec.status, req.user.id]
       );
 
-      // Send email notification for students only
-            if (rec.person_type === 'student' && ['absent','late','halfday'].includes(rec.status)) {
+      // ─── ORIGINAL STUDENT NOTIFICATION (UNTOUCHED) ───
+      if (rec.person_type === 'student' && ['absent','late','halfday'].includes(rec.status)) {
         try {
           const [studentRows] = await pool.execute(
             `SELECT s.full_name, s.email, s.phone, s.whatsapp_no, c.name as class_name
@@ -123,6 +121,50 @@ exports.saveAttendance = async (req, res) => {
           console.error('Notification error:', err.message);
         }
       }
+
+      // ─── NEW ADD-ON: AUTOMATED EMPLOYEE NOTIFICATION SYSTEM ───
+      if (rec.person_type === 'employee' && ['absent','late','halfday'].includes(rec.status)) {
+        try {
+          // Fetching Employee details directly from users and roles tables
+          const [employeeRows] = await pool.execute(
+            `SELECT u.full_name, u.email, u.phone, r.name as role_name
+             FROM users u 
+             LEFT JOIN roles r ON u.role_id = r.id
+             WHERE u.id = ?`,
+            [rec.person_id]
+          );
+
+          if (employeeRows.length) {
+            const employee = employeeRows[0];
+
+            // 1. WhatsApp Notification Trigger (Using Twilio WhatsApp connection service)
+            if (employee.phone) {
+              sendAttendanceWhatsApp(
+                employee.phone,
+                employee.full_name,
+                employee.role_name || 'Staff',
+                attendance_date,
+                rec.status
+              ).catch(e => console.error('Employee Attendance WhatsApp failed:', e.message));
+            }
+
+            // 2. Email Notification Trigger (Using Nodemailer connection service)
+            if (employee.email) {
+              sendAttendanceNotification(
+                employee.email,
+                employee.role_name || 'Staff',
+                employee.full_name,
+                'Staff Management',
+                attendance_date,
+                rec.status
+              ).catch(e => console.error('Employee Attendance Email failed:', e.message));
+            }
+          }
+        } catch (err) {
+          console.error('Employee Notification system error:', err.message);
+        }
+      }
+      // ─── END OF ADD-ON ───
     }
 
     res.json({ message: 'Attendance saved successfully' });
@@ -141,7 +183,6 @@ exports.getAttendanceReport = async (req, res) => {
     const toM = String(parseInt(to_month) || (new Date().getMonth() + 1)).padStart(2, '0');
     const toY = String(parseInt(to_year) || new Date().getFullYear());
 
-// Get last day of to_month properly
     const lastDay = new Date(parseInt(toY), parseInt(toM), 0).getDate();
     const fromDate = `${fromY}-${fromM}-01`;
     const toDate = `${toY}-${toM}-${lastDay}`;
@@ -179,11 +220,10 @@ exports.getAttendanceReport = async (req, res) => {
 
       console.log('EXECUTING STUDENT QUERY with params:', params);
       const [rows] = await pool.execute(query, params);
-      console.log('STUDENT RESULTS:', rows.length, 'rows, first row:', rows[0]);
       results = [...results, ...rows];
     }
 
-   if (person_type === 'employee' && !teacherClass) {
+    if (person_type === 'employee' && !teacherClass) {
       const userRole = req.user.role;
 
       let empQuery = `
@@ -203,7 +243,6 @@ exports.getAttendanceReport = async (req, res) => {
 
       const empParams = [fromDate, toDate];
 
-      // Principal cannot see admin or other principals
       if (userRole === 'principal') {
         empQuery += ` AND r.name NOT IN ('admin', 'principal')`;
       }
@@ -228,19 +267,12 @@ exports.getDailyReport = async (req, res) => {
     const class_id = req.query.class_id || null;
     const person_type = req.query.person_type || 'student';
 
-    // Use JavaScript Date to get correct last day
     const firstDay = `${y}-${String(m).padStart(2,'0')}-01`;
     const lastDay = `${y}-${String(m).padStart(2,'0')}-${new Date(y, m, 0).getDate()}`;
-
-    console.log(`\n=== DAILY REPORT REQUEST ===`);
-    console.log(`Month: ${m}, Year: ${y}`);
-    console.log(`Date range: ${firstDay} to ${lastDay}`);
-    console.log(`Person type: ${person_type}, Class: ${class_id}`);
 
     const teacherClass = await getTeacherClass(req.user.id, req.user.role);
     const effectiveClassId = teacherClass || class_id || null;
 
-    // Direct query with hardcoded dates to avoid parameter issues
     let sql = '';
     let params = [];
 
@@ -268,28 +300,15 @@ exports.getDailyReport = async (req, res) => {
       }
     }
 
-    console.log('SQL:', sql);
-    console.log('Params:', params);
-
     const [rows] = await pool.execute(sql, params);
-    console.log(`Found ${rows.length} attendance records`);
-
-    if (rows.length > 0) {
-      console.log('First record:', JSON.stringify(rows[0]));
-    }
-
-    // Build result: { "personId": { "YYYY-MM-DD": "status" } }
     const result = {};
 
     rows.forEach(row => {
       const personId = String(row.person_id);
-
-      // Convert date to string properly
       let dateStr;
       const rawDate = row.attendance_date;
 
       if (rawDate instanceof Date) {
-        // MySQL Date object - add timezone offset to get correct date
         const offset = rawDate.getTimezoneOffset();
         const corrected = new Date(rawDate.getTime() - (offset * 60 * 1000));
         dateStr = corrected.toISOString().split('T')[0];
@@ -302,10 +321,6 @@ exports.getDailyReport = async (req, res) => {
       if (!result[personId]) result[personId] = {};
       result[personId][dateStr] = row.status;
     });
-
-    console.log(`Built result for ${Object.keys(result).length} persons`);
-    console.log('Sample result:', JSON.stringify(Object.entries(result).slice(0, 1)));
-    console.log('=== END DAILY REPORT ===\n');
 
     res.json(result);
   } catch (err) {
