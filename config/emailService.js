@@ -186,8 +186,7 @@ const sendPasswordChangedEmail = async (toEmail, userName) => {
   });
 };
 
-// ─── SEND ATTENDANCE NOTIFICATION ────────────────────────────
-// ─── SEND ATTENDANCE NOTIFICATION (UPDATED FOR DYNAMIC STUDENT/EMPLOYEE SWITCH) ───
+// ─── SEND ATTENDANCE NOTIFICATION (DYNAMIC SWITCH ADD-ON) ───
 const sendAttendanceNotification = async (toEmail, parentOrRoleName, personName, classNameOrDept, date, status) => {
   const statusDetails = {
     present: { emoji: '✅', color: '#16a34a', bg: '#f0fdf4', text: 'PRESENT' },
@@ -197,9 +196,11 @@ const sendAttendanceNotification = async (toEmail, parentOrRoleName, personName,
   };
   const d = statusDetails[status] || statusDetails.present;
 
-  // ─── NEW ADD-ON: DYNAMIC LABELS SWITCH BASED ON THE RECEIPENT TYPE ───
-  // Agar classNameOrDept 'Staff Management' hai, iska matlab yeh notification ek employee ke liye hai
-  const isEmployee = classNameOrDept === 'Staff Management';
+  // SAFE DETECTION ENGINE: Fallback layers ensuring dynamic switch triggers seamlessly
+  const isEmployee = 
+    classNameOrDept === 'Staff Management' || 
+    ['principal', 'teacher', 'clerk', 'staff', 'admin'].includes(parentOrRoleName?.toLowerCase()) || 
+    !classNameOrDept?.toLowerCase().includes('class');
   
   const greetingText = isEmployee 
     ? `Dear <strong>${personName}</strong>,` 
@@ -210,7 +211,7 @@ const sendAttendanceNotification = async (toEmail, parentOrRoleName, personName,
     : `${personName} is ${d.text} today`;
 
   const dynamicTypeLabel = isEmployee ? 'Employee' : 'Student';
-  const dynamicGroupLabel = isEmployee ? 'Department' : 'Class';
+  const dynamicGroupLabel = isEmployee ? 'Designation' : 'Class';
 
   return sendEmail({
     to: toEmail,
@@ -239,7 +240,7 @@ const sendAttendanceNotification = async (toEmail, parentOrRoleName, personName,
             </tr>
             <tr style="background:#f8fafc;">
               <td style="padding:10px 8px;color:#94a3b8;font-weight:bold;font-size:13px;">${dynamicGroupLabel}</td>
-              <td style="padding:10px 8px;font-weight:600;color:#1e293b;font-size:13px;">${classNameOrDept}</td>
+              <td style="padding:10px 8px;font-weight:600;color:#1e293b;font-size:13px;">${isEmployee ? parentOrRoleName : classNameOrDept}</td>
             </tr>
             <tr>
               <td style="padding:10px 8px;color:#94a3b8;font-weight:bold;font-size:13px;">Date</td>
@@ -257,7 +258,6 @@ const sendAttendanceNotification = async (toEmail, parentOrRoleName, personName,
       </div>`
   });
 };
-
 
 // ─── SEND FEE PAYMENT EMAIL WITH PDF ─────────────────────────
 const sendFeePaymentNotification = async (toEmail, receipt) => {
@@ -389,7 +389,7 @@ const sendEmployeeUpdateEmail = async (toEmail, empName) => {
         </div>
         <div style="padding:28px;">
           <p>Dear <strong>${empName}</strong>,</p>
-          <p style="color:#64748b;">Your student profile has been updated. Time: <strong>${getIndiaDateTimeString()}</strong></p>
+          <p style="color:#64748b;">Your staff profile has been updated. Time: <strong>${getIndiaDateTimeString()}</strong></p>
         </div>
       </div>`
   });

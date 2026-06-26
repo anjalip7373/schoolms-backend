@@ -68,33 +68,28 @@ const sendPasswordChangedWhatsApp = async (phone, userName) => {
   return sendWhatsApp(phone, message);
 };
 
-// ── ATTENDANCE NOTIFICATION ───────────────────────────────────
-// ─── ATTENDANCE NOTIFICATION (UPDATED FOR DYNAMIC STUDENT/EMPLOYEE SWITCH) ───
+// ── ATTENDANCE NOTIFICATION (DYNAMIC SWITCH ADD-ON) ───
 const sendAttendanceWhatsApp = async (phone, personName, classNameOrDept, date, status) => {
   const statusEmoji = { absent: '❌', late: '⏰', halfday: '🌓' };
   const statusText  = { absent: 'ABSENT', late: 'LATE', halfday: 'HALF DAY' };
   
-  // ─── NEW ADD-ON: DYNAMIC TEXT LOGIC FOR EMPLOYEES VS STUDENTS ───
-  // Agar classNameOrDept 'Staff Management' hai, iska matlab yeh employee ka attendance hai
-  const isEmployee = classNameOrDept === 'Staff Management';
+  // SAFE REGEX LAYER: Checks if string isn't standard child structure
+  const isEmployee = classNameOrDept === 'Staff Management' || !classNameOrDept?.toLowerCase().includes('class');
   
   let message = '';
 
   if (isEmployee) {
-    // Professional Format for Employees
     message =
       `🏫 *SchoolMS Staff Attendance Alert*\n\n` +
-      `${statusEmoji[status] || '📋'} Dear *${personName}*,\n\n` +
+      `Dear *${personName}*,\n\n` +
       `You have been marked *${statusText[status] || status.toUpperCase()}* today.\n\n` +
       `📋 *Details:*\n` +
       `👤 Employee: *${personName}*\n` +
-      `💼 Department: *${classNameOrDept}*\n` +
       `📅 Date: *${date}*\n` +
       `📊 Status: *${statusText[status] || status.toUpperCase()}*\n\n` +
       `Please contact the school administration if you have any queries.\n\n` +
       `_SchoolMS - School Management System_`;
   } else {
-    // Original Format for Students (Untouched)
     message =
       `🏫 *SchoolMS Attendance Alert*\n\n` +
       `${statusEmoji[status] || '📋'} Dear Parent/Guardian,\n\n` +
@@ -107,7 +102,7 @@ const sendAttendanceWhatsApp = async (phone, personName, classNameOrDept, date, 
       `Please contact the school for more information.\n\n` +
       `_SchoolMS - School Management System_`;
   }
-  
+
   return sendWhatsApp(phone, message);
 };
 
