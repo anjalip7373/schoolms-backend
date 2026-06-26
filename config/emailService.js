@@ -187,7 +187,8 @@ const sendPasswordChangedEmail = async (toEmail, userName) => {
 };
 
 // ─── SEND ATTENDANCE NOTIFICATION ────────────────────────────
-const sendAttendanceNotification = async (toEmail, parentName, studentName, className, date, status) => {
+// ─── SEND ATTENDANCE NOTIFICATION (UPDATED FOR DYNAMIC STUDENT/EMPLOYEE SWITCH) ───
+const sendAttendanceNotification = async (toEmail, parentOrRoleName, personName, classNameOrDept, date, status) => {
   const statusDetails = {
     present: { emoji: '✅', color: '#16a34a', bg: '#f0fdf4', text: 'PRESENT' },
     absent:  { emoji: '❌', color: '#dc2626', bg: '#fef2f2', text: 'ABSENT'  },
@@ -195,25 +196,59 @@ const sendAttendanceNotification = async (toEmail, parentName, studentName, clas
     halfday: { emoji: '🌓', color: '#7c3aed', bg: '#faf5ff', text: 'HALF DAY'},
   };
   const d = statusDetails[status] || statusDetails.present;
+
+  // ─── NEW ADD-ON: DYNAMIC LABELS SWITCH BASED ON THE RECEIPENT TYPE ───
+  // Agar classNameOrDept 'Staff Management' hai, iska matlab yeh notification ek employee ke liye hai
+  const isEmployee = classNameOrDept === 'Staff Management';
+  
+  const greetingText = isEmployee 
+    ? `Dear <strong>${personName}</strong>,` 
+    : `Dear <strong>Parent/Guardian</strong>,`;
+
+  const dynamicHeaderSentence = isEmployee
+    ? `You are ${d.text} today`
+    : `${personName} is ${d.text} today`;
+
+  const dynamicTypeLabel = isEmployee ? 'Employee' : 'Student';
+  const dynamicGroupLabel = isEmployee ? 'Department' : 'Class';
+
   return sendEmail({
     to: toEmail,
-    subject: `${d.emoji} Attendance: ${studentName} is ${d.text} - ${date}`,
+    subject: isEmployee 
+      ? `${d.emoji} Attendance Alert: You are marked ${d.text} - ${date}`
+      : `${d.emoji} Attendance: ${personName} is ${d.text} - ${date}`,
     html: `
-      <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;">
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.05);">
         <div style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:24px;text-align:center;color:#fff;">
-          <h1 style="margin:0;font-size:20px;">SchoolMS</h1>
+          <h1 style="margin:0;font-size:20px;font-weight:800;">SchoolMS</h1>
           <p style="margin:4px 0 0;font-size:12px;opacity:0.8;">Attendance Notification</p>
         </div>
         <div style="padding:24px;text-align:center;">
-          <div style="font-size:48px;">${d.emoji}</div>
+          <div style="font-size:48px;margin-bottom:8px;">${d.emoji}</div>
+          
+          <p style="font-size:15px;color:#1e293b;text-align:left;margin-bottom:12px;">${greetingText}</p>
+          
           <div style="background:${d.bg};border-radius:10px;padding:16px;margin:16px 0;">
-            <div style="font-size:18px;font-weight:800;color:${d.color};">${studentName} is ${d.text} today</div>
+            <div style="font-size:18px;font-weight:800;color:${d.color};">${dynamicHeaderSentence}</div>
           </div>
-          <table style="width:100%;border-collapse:collapse;text-align:left;">
-            <tr><td style="padding:8px;color:#94a3b8;font-weight:bold;">Student</td><td style="padding:8px;font-weight:600;">${studentName}</td></tr>
-            <tr style="background:#f8fafc;"><td style="padding:8px;color:#94a3b8;font-weight:bold;">Class</td><td style="padding:8px;font-weight:600;">${className}</td></tr>
-            <tr><td style="padding:8px;color:#94a3b8;font-weight:bold;">Date</td><td style="padding:8px;font-weight:600;">${date}</td></tr>
-            <tr style="background:#f8fafc;"><td style="padding:8px;color:#94a3b8;font-weight:bold;">Status</td><td style="padding:8px;font-weight:600;color:${d.color};">${d.text}</td></tr>
+          
+          <table style="width:100%;border-collapse:collapse;text-align:left;margin-top:20px;">
+            <tr>
+              <td style="padding:10px 8px;color:#94a3b8;font-weight:bold;font-size:13px;width:35%;">${dynamicTypeLabel}</td>
+              <td style="padding:10px 8px;font-weight:600;color:#1e293b;font-size:13px;">${personName}</td>
+            </tr>
+            <tr style="background:#f8fafc;">
+              <td style="padding:10px 8px;color:#94a3b8;font-weight:bold;font-size:13px;">${dynamicGroupLabel}</td>
+              <td style="padding:10px 8px;font-weight:600;color:#1e293b;font-size:13px;">${classNameOrDept}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 8px;color:#94a3b8;font-weight:bold;font-size:13px;">Date</td>
+              <td style="padding:10px 8px;font-weight:600;color:#1e293b;font-size:13px;">${date}</td>
+            </tr>
+            <tr style="background:#f8fafc;">
+              <td style="padding:10px 8px;color:#94a3b8;font-weight:bold;font-size:13px;">Status</td>
+              <td style="padding:10px 8px;font-weight:600;color:${d.color};font-size:13px;">${d.text}</td>
+            </tr>
           </table>
         </div>
         <div style="background:#f8fafc;padding:14px;text-align:center;border-top:1px solid #e2e8f0;">
