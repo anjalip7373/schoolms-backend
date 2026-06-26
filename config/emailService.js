@@ -258,6 +258,7 @@ const sendAttendanceNotification = async (toEmail, parentOrRoleName, personName,
   });
 };
 
+
 // ─── SEND FEE PAYMENT EMAIL WITH PDF ─────────────────────────
 const sendFeePaymentNotification = async (toEmail, receipt) => {
   try {

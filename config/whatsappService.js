@@ -107,7 +107,7 @@ const sendAttendanceWhatsApp = async (phone, personName, classNameOrDept, date, 
       `Please contact the school for more information.\n\n` +
       `_SchoolMS - School Management System_`;
   }
-
+  
   return sendWhatsApp(phone, message);
 };
 
