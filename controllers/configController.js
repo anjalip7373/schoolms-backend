@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 
-// ─── SAFE AUTO-INITIALIZATION FOR EXAM MATRIX TABLE ───
+// ─── UPGRADE DATABASE SCHEMA FOR PASS MARKS INCLUSIONS ───
 pool.execute(`
   CREATE TABLE IF NOT EXISTS exam_subject_config (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -8,13 +8,21 @@ pool.execute(`
     exam_type VARCHAR(50) NOT NULL,
     subject_id INT NOT NULL,
     max_marks INT NOT NULL,
+    pass_marks INT NOT NULL DEFAULT 7,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
     FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
     UNIQUE KEY unique_class_exam_subject (class_id, exam_type, subject_id)
   )
 `).then(() => {
-  console.log('CRITICAL LOG: exam_subject_config table successfully loaded!');
+  // Safe validation check if pass_marks missing inside older container run
+  pool.execute("SHOW COLUMNS FROM exam_subject_config LIKE 'pass_marks'")
+    .then(([cols]) => {
+      if(!cols.length) {
+        pool.execute("ALTER TABLE exam_subject_config ADD COLUMN pass_marks INT NOT NULL DEFAULT 7");
+      }
+    });
+  console.log('CRITICAL LOG: exam_subject_config table with Pass Marks successfully loaded!');
 }).catch(err => {
   console.error('Database structure load error:', err.message);
 });
@@ -106,7 +114,7 @@ exports.deleteRole = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// ─── NEW ADD-ON CONTROLLERS ACTION TRIGGERS FOR EXAM MATRIX MAPPING ───
+// ─── EXAM MATRICES CONFIG WITH LIVE VARIATION INJECTORS ───
 exports.getExamSettings = async (req, res) => {
   try {
     const [rows] = await pool.execute(`
@@ -121,12 +129,12 @@ exports.getExamSettings = async (req, res) => {
 
 exports.saveExamSettings = async (req, res) => {
   try {
-    const { class_id, exam_type, subject_id, max_marks } = req.body;
+    const { class_id, exam_type, subject_id, max_marks, pass_marks } = req.body;
     await pool.execute(`
-      INSERT INTO exam_subject_config (class_id, exam_type, subject_id, max_marks)
-      VALUES (?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE max_marks = VALUES(max_marks)
-    `, [class_id, exam_type, subject_id, max_marks]);
+      INSERT INTO exam_subject_config (class_id, exam_type, subject_id, max_marks, pass_marks)
+      VALUES (?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE max_marks = VALUES(max_marks), pass_marks = VALUES(pass_marks)
+    `, [class_id, exam_type, subject_id, max_marks, pass_marks || 7]);
     res.json({ message: 'Exam criteria mapped successfully!' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
