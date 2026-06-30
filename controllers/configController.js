@@ -106,7 +106,7 @@ exports.deleteRole = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// ─── NEW ADD-ON ROUTES ACTIONS FOR EXAM MATRIX ───
+// ─── NEW ADD-ON CONTROLLERS ACTION TRIGGERS FOR EXAM MATRIX MAPPING ───
 exports.getExamSettings = async (req, res) => {
   try {
     const [rows] = await pool.execute(`
