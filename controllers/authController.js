@@ -7,7 +7,6 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 // ─── CREATE OTP TABLE IF IT DOESN'T EXIST ───────────────────────────────────
-// This runs once when the server starts
 pool.execute(`
   CREATE TABLE IF NOT EXISTS otp_store (
     login_user_id VARCHAR(100) PRIMARY KEY,
@@ -79,11 +78,11 @@ exports.resetPasswordRequest = async (req, res) => {
     const { login_user_id } = req.body;
     const key = login_user_id.trim().toLowerCase();
 
-   const [rows] = await pool.execute(
-  `SELECT u.id, u.full_name, u.email, u.phone
-   FROM users u WHERE LOWER(u.login_user_id) = ? AND u.is_active = 1`,
-  [key]
-);
+    const [rows] = await pool.execute(
+      `SELECT u.id, u.full_name, u.email, u.phone
+       FROM users u WHERE LOWER(u.login_user_id) = ? AND u.is_active = 1`,
+      [key]
+    );
 
     if (!rows.length) {
       return res.status(404).json({ message: 'User ID not found.' });
@@ -95,28 +94,17 @@ exports.resetPasswordRequest = async (req, res) => {
       return res.status(400).json({ message: 'No email registered for this account. Contact your administrator.' });
     }
 
-    // Delete any old OTP for this user from DB
     await pool.execute(`DELETE FROM otp_store WHERE login_user_id = ?`, [key]);
 
-    // Generate fresh OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = Date.now() + 15 * 60 * 1000; // 15 minutes from now
+    const expiry = Date.now() + 15 * 60 * 1000;
 
-    // Store OTP in database (survives server restarts)
     await pool.execute(
       `INSERT INTO otp_store (login_user_id, otp, user_id, email, full_name, expiry)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [key, otp, user.id, user.email, user.full_name, expiry]
     );
 
-    console.log('\n=============================');
-    console.log('OTP REQUEST');
-    console.log('Key stored as:', key);
-    console.log('OTP:', otp);
-    console.log('Stored in DATABASE (survives restarts)');
-    console.log('=============================\n');
-
-    // Send email
     try {
       await sendPasswordResetEmail(user.email, user.full_name, otp);
     } catch (e) {
@@ -125,20 +113,10 @@ exports.resetPasswordRequest = async (req, res) => {
       return res.status(500).json({ message: 'Failed to send email. Please check your email settings.' });
     }
 
-    // ── Send WhatsApp OTP ──
-// if (user.phone) {
-//   sendPasswordResetWhatsApp(user.phone, user.full_name, otp)
-//     .catch(e => console.error('OTP WhatsApp failed:', e.message));
-// }
-
-console.log('User phone for WhatsApp OTP:', user.phone);
-if (user.phone) {
-  sendPasswordResetWhatsApp(user.phone, user.full_name, otp)
-    .then(() => console.log('OTP WhatsApp sent to:', user.phone))
-    .catch(e => console.error('OTP WhatsApp failed:', e.message));
-} else {
-  console.log('No phone number found for user — WhatsApp OTP skipped');
-}
+    if (user.phone) {
+      sendPasswordResetWhatsApp(user.phone, user.full_name, otp)
+        .catch(e => console.error('OTP WhatsApp failed:', e.message));
+    }
 
     res.json({
       success: true,
@@ -163,19 +141,10 @@ exports.verifyResetAndSetPassword = async (req, res) => {
     const key = login_user_id.trim().toLowerCase();
     const enteredOtp = reset_code.toString().trim();
 
-    // Fetch OTP from database
     const [storedRows] = await pool.execute(
       `SELECT * FROM otp_store WHERE login_user_id = ?`,
       [key]
     );
-
-    console.log('\n=============================');
-    console.log('OTP VERIFY');
-    console.log('Key looking up:', key);
-    console.log('Entered OTP:', enteredOtp);
-    console.log('DB rows found:', storedRows.length);
-    if (storedRows.length) console.log('Stored OTP:', storedRows[0].otp);
-    console.log('=============================\n');
 
     if (!storedRows.length) {
       return res.status(400).json({ message: 'OTP expired or not found. Please click Resend OTP.' });
@@ -189,11 +158,9 @@ exports.verifyResetAndSetPassword = async (req, res) => {
     }
 
     if (stored.otp !== enteredOtp) {
-      console.log(`MISMATCH: stored="${stored.otp}" entered="${enteredOtp}"`);
       return res.status(400).json({ message: 'Incorrect OTP. Please use the latest OTP from your email.' });
     }
 
-    // Password strength check
     const strongPw = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
     if (!strongPw.test(new_password)) {
       return res.status(400).json({ message: 'Password must be 8+ chars with uppercase, lowercase, number and special character (@$!%*?&).' });
@@ -205,20 +172,18 @@ exports.verifyResetAndSetPassword = async (req, res) => {
       [hashed, stored.user_id]
     );
 
-    // Delete OTP from DB after successful reset
     await pool.execute(`DELETE FROM otp_store WHERE login_user_id = ?`, [key]);
-    console.log('Password reset success for:', key);
 
     if (stored.email) {
-  try { await sendPasswordChangedEmail(stored.email, stored.full_name); } catch(e) {}
-}
-// ✅ Send WhatsApp notification on password change
-const [userRows] = await pool.execute('SELECT phone FROM users WHERE id = ?', [stored.user_id]);
-const userPhone = userRows[0]?.phone;
-if (userPhone) {
-  sendPasswordChangedWhatsApp(userPhone, stored.full_name)
-    .catch(e => console.error('Password changed WhatsApp failed:', e.message));
-}
+      try { await sendPasswordChangedEmail(stored.email, stored.full_name); } catch(e) {}
+    }
+
+    const [userRows] = await pool.execute('SELECT phone FROM users WHERE id = ?', [stored.user_id]);
+    const userPhone = userRows[0]?.phone;
+    if (userPhone) {
+      sendPasswordChangedWhatsApp(userPhone, stored.full_name)
+        .catch(e => console.error('Password changed WhatsApp failed:', e.message));
+    }
 
     res.json({ message: 'Password reset successfully!' });
 
@@ -229,7 +194,6 @@ if (userPhone) {
 };
 
 // --- PROFILE FUNCTIONS ---
-
 exports.me = async (req, res) => {
   try {
     const [rows] = await pool.execute(
@@ -283,12 +247,27 @@ exports.changePassword = async (req, res) => {
   } catch (err) { return res.status(500).json({ message: err.message }); }
 };
 
+// ─── ADMIN RESET PASSWORD WITH AUTO-WHATSAPP AND EMAIL NOTIFICATIONS ───
 exports.adminResetPassword = async (req, res) => {
   try {
     const { user_id, new_password } = req.body;
     if (!['admin', 'principal'].includes(req.user.role)) return res.status(403).json({ message: 'Not authorized' });
+    
     const hashed = await bcrypt.hash(new_password, 10);
     await pool.execute('UPDATE users SET login_password = ? WHERE id = ?', [hashed, user_id]);
+
+    const [targetUser] = await pool.execute('SELECT full_name, email, phone FROM users WHERE id = ?', [user_id]);
+    if (targetUser.length > 0) {
+      const user = targetUser[0];
+      if (user.email) {
+        sendPasswordChangedEmail(user.email, user.full_name)
+          .catch(e => console.error('Admin Reset Email failed:', e.message));
+      }
+      if (user.phone) {
+        sendPasswordChangedWhatsApp(user.phone, user.full_name)
+          .catch(e => console.error('Admin Reset WhatsApp failed:', e.message));
+      }
+    }
     return res.json({ message: 'Password reset successfully' });
   } catch (err) { return res.status(500).json({ message: err.message }); }
 };
