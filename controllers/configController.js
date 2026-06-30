@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 
-// ─── COMPLETE SAFE DATABASE STRUCT INITIALIZER ───
+// ─── COMPLETE SAFE DATABASE STRUCT & SCHEMA UPDATE INITIALIZER ───
 pool.execute(`
   CREATE TABLE IF NOT EXISTS exam_subject_config (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -14,14 +14,26 @@ pool.execute(`
     FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
     UNIQUE KEY unique_class_exam_subject (class_id, exam_type, subject_id)
   )
-`).then(() => {
-  pool.execute("SHOW COLUMNS FROM exam_subject_config LIKE 'pass_marks'")
-    .then(([cols]) => {
-      if(!cols.length) {
-        pool.execute("ALTER TABLE exam_subject_config ADD COLUMN pass_marks INT NOT NULL DEFAULT 7");
-      }
-    });
-  console.log('CRITICAL LOG: exam_subject_config matrix engine running clean!');
+`).then(async () => {
+  // 1. Safe verification check if pass_marks missing inside older container run
+  const [cols] = await pool.execute("SHOW COLUMNS FROM exam_subject_config LIKE 'pass_marks'");
+  if(!cols.length) {
+    await pool.execute("ALTER TABLE exam_subject_config ADD COLUMN pass_marks INT NOT NULL DEFAULT 7");
+  }
+
+  // 2. CRITICAL FIX: Convert student_marks table column to VARCHAR to accept 'Unit 1', 'Semester 1'
+  try {
+    await pool.execute("ALTER TABLE student_marks MODIFY COLUMN exam_type_id VARCHAR(50) NOT NULL");
+    console.log("SCHEMA DUAL INTEGRITY: student_marks column migrated to VARCHAR successfully.");
+  } catch (err) { console.log("Schema sync trace skipped for marks container:", err.message); }
+
+  // 3. CRITICAL FIX: Convert student_exam_remarks table column to VARCHAR to accept text IDs
+  try {
+    await pool.execute("ALTER TABLE student_exam_remarks MODIFY COLUMN exam_type_id VARCHAR(50) NOT NULL");
+    console.log("SCHEMA DUAL INTEGRITY: student_exam_remarks column migrated to VARCHAR successfully.");
+  } catch (err) { console.log("Schema sync trace skipped for remarks container:", err.message); }
+
+  console.log('CRITICAL LOG: exam_subject_config matrix engine running clean with structural text mappings!');
 }).catch(err => console.error('Database configuration load error:', err.message));
 
 // Classes Management - Fully Intact
@@ -111,7 +123,7 @@ exports.deleteRole = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// ─── UPDATED ACTION MAPPERS WITH ATTACHED REMOVAL LOGICS ───
+// Exam Setting Matrix Controllers
 exports.getExamSettings = async (req, res) => {
   try {
     const [rows] = await pool.execute(`

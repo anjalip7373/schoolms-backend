@@ -222,7 +222,7 @@ exports.getMarksheet = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// Teacher Assigned & Remarks - Intact
+// Teacher Assigned & Remarks - Fully Intact
 exports.getTeacherAssignedSubjects = async (req, res) => {
   try {
     const { teacher_id } = req.query;
