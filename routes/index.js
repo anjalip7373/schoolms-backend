@@ -61,7 +61,7 @@ router.post('/employees', authenticateToken, employeeController.addEmployee);
 router.put('/employees/:id', authenticateToken, employeeController.updateEmployee);
 router.put('/employees/:id/toggle-status', authenticateToken, employeeController.toggleEmployeeStatus);
 
-// Config (Admin only) (Fully Intact)
+// Config Core Endpoints (Fully Intact)
 router.get('/config/classes', authenticateToken, configController.getClasses);
 router.post('/config/classes', authenticateToken, requireRole('admin'), configController.addClass);
 router.put('/config/classes/:id', authenticateToken, requireRole('admin'), configController.updateClass);
@@ -77,28 +77,27 @@ router.post('/config/roles', authenticateToken, requireRole('admin'), configCont
 router.put('/config/roles/:id', authenticateToken, requireRole('admin'), configController.updateRole);
 router.delete('/config/roles/:id', authenticateToken, requireRole('admin'), configController.deleteRole);
 
-// ─── ADD-ON EXAM TRACK MATRIX DIRECT ROUTING MAPS ───
+// ─── SAFE UPDATED ROUTING REGISTRIES FOR COMPREHENSIVE CONTROL ───
 router.get('/config/exam-settings', authenticateToken, configController.getExamSettings);
 router.post('/config/exam-settings', authenticateToken, requireRole('admin'), configController.saveExamSettings);
+router.delete('/config/exam-settings/:id', authenticateToken, requireRole('admin'), configController.deleteExamSetting);
 
-// Subjects (Fully Intact)
+// Subjects & Class-wise maps (Fully Intact)
 router.get('/subjects', authenticateToken, marksController.getSubjects);
 router.post('/subjects', authenticateToken, marksController.addSubject);
 router.put('/subjects/:id', authenticateToken, marksController.updateSubject);
 router.delete('/subjects/:id', authenticateToken, marksController.deleteSubject);
 
-// Exam Types (Fully Intact)
 router.get('/exam-types', authenticateToken, marksController.getExamTypes);
 router.post('/exam-types', authenticateToken, marksController.addExamType);
 router.put('/exam-types/:id', authenticateToken, marksController.updateExamType);
 router.delete('/exam-types/:id', authenticateToken, marksController.deleteExamType);
 
-// Class-wise subjects (Fully Intact)
 router.get('/class-subjects', authenticateToken, marksController.getClassSubjects);
 router.post('/class-subjects', authenticateToken, marksController.assignClassSubject);
 router.delete('/class-subjects/:id', authenticateToken, marksController.removeClassSubject);
 
-// Marks & Remarks (Fully Intact)
+// Marks System Engine Paths
 router.get('/marks/remarks', authenticateToken, marksController.getRemarks);
 router.post('/marks/remarks', authenticateToken, marksController.saveRemarks);
 router.get('/marks/marksheet', authenticateToken, marksController.getMarksheet);

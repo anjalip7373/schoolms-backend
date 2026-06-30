@@ -1,36 +1,26 @@
 const pool = require('../config/db');
 
-// ── SUBJECTS ──────────────────────────────────────────────────
+// Subjects Management - Fully Intact
 exports.getSubjects = async (req, res) => {
   try {
     const [rows] = await pool.execute('SELECT * FROM subjects ORDER BY name');
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
-
 exports.addSubject = async (req, res) => {
   try {
     const { name, code } = req.body;
-    await pool.execute(
-      'INSERT INTO subjects (name, code, max_marks, pass_marks) VALUES (?,?,100,35)',
-      [name, code || null]
-    );
+    await pool.execute('INSERT INTO subjects (name, code, max_marks, pass_marks) VALUES (?,?,100,35)', [name, code || null]);
     res.json({ message: 'Subject added successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
-
 exports.updateSubject = async (req, res) => {
   try {
     const { name, code } = req.body;
-    await pool.execute(
-      'UPDATE subjects SET name=?, code=? WHERE id=?',
-      [name, code || null, req.params.id]
-    );
+    await pool.execute('UPDATE subjects SET name=?, code=? WHERE id=?', [name, code || null, req.params.id]);
     res.json({ message: 'Subject updated successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
-
-const oldDeleteSubject = exports.deleteSubject;
 exports.deleteSubject = async (req, res) => {
   try {
     await pool.execute('DELETE FROM subjects WHERE id=?', [req.params.id]);
@@ -38,32 +28,23 @@ exports.deleteSubject = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// ── CLASS-WISE SUBJECTS ───────────────────────────────────────
+// Class-wise subjects - Fully Intact
 exports.getClassSubjects = async (req, res) => {
   try {
     const { class_id } = req.query;
     if (!class_id) {
       const [rows] = await pool.execute(`
-        SELECT cs.*, s.name as subject_name, s.code,
-        c.name as class_name
-        FROM class_subjects cs
-        JOIN subjects s ON cs.subject_id = s.id
-        JOIN classes c ON cs.class_id = c.id
-        ORDER BY c.name, s.name
+        SELECT cs.*, s.name as subject_name, s.code, c.name as class_name
+        FROM class_subjects cs JOIN subjects s ON cs.subject_id = s.id JOIN classes c ON cs.class_id = c.id ORDER BY c.name, s.name
       `);
       return res.json(rows);
     }
     const [rows] = await pool.execute(`
-      SELECT cs.*, s.name as subject_name, s.code
-      FROM class_subjects cs
-      JOIN subjects s ON cs.subject_id = s.id
-      WHERE cs.class_id = ?
-      ORDER BY s.name
+      SELECT cs.*, s.name as subject_name, s.code FROM class_subjects cs JOIN subjects s ON cs.subject_id = s.id WHERE cs.class_id = ? ORDER BY s.name
     `, [class_id]);
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
-
 exports.assignClassSubject = async (req, res) => {
   try {
     const { class_id, subject_id } = req.body;
@@ -71,7 +52,6 @@ exports.assignClassSubject = async (req, res) => {
     res.json({ message: 'Subject assigned to class' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
-
 exports.removeClassSubject = async (req, res) => {
   try {
     await pool.execute('DELETE FROM class_subjects WHERE id=?', [req.params.id]);
@@ -79,10 +59,9 @@ exports.removeClassSubject = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// ── EXAM TYPES MAPPED ACCORDING TO REQ DEFINITIONS ──
+// Unified Exam Profiles
 exports.getExamTypes = async (req, res) => {
   try {
-    // Static fallbacks structured inside configuration metrics seamlessly
     res.json([
       { id: 'Unit 1', name: 'Unit 1' },
       { id: 'Unit 2', name: 'Unit 2' },
@@ -91,12 +70,11 @@ exports.getExamTypes = async (req, res) => {
     ]);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+exports.addExamType = async (req, res) => { res.json({ message: 'Static sequence bypass' }); };
+exports.updateExamType = async (req, res) => { res.json({ message: 'Static sequence bypass' }); };
+exports.deleteExamType = async (req, res) => { res.json({ message: 'Static sequence bypass' }); };
 
-exports.addExamType = async (req, res) => { res.json({ message: 'Bypassed under custom layout' }); };
-exports.updateExamType = async (req, res) => { res.json({ message: 'Bypassed under custom layout' }); };
-exports.deleteExamType = async (req, res) => { res.json({ message: 'Bypassed under custom layout' }); };
-
-// ── MARKS LOADING & DYNAMIC CONFIG SYNC ──
+// Marks Entry Dynamic Processor
 exports.getMarks = async (req, res) => {
   try {
     const { class_id, exam_type_id, academic_year } = req.query;
@@ -115,11 +93,8 @@ exports.getMarks = async (req, res) => {
       [effectiveClassId]
     );
 
-    // FETCH LIVE RANGES FROM THE CONFIG MATRIX
     const [configRows] = await pool.execute(
-      `SELECT esc.subject_id, esc.max_marks, esc.pass_marks 
-       FROM exam_subject_config esc 
-       WHERE esc.class_id = ? AND esc.exam_type = ?`,
+      `SELECT esc.subject_id, esc.max_marks, esc.pass_marks FROM exam_subject_config esc WHERE esc.class_id = ? AND esc.exam_type = ?`,
       [effectiveClassId, exam_type_id || 'Unit 1']
     );
 
@@ -222,8 +197,7 @@ exports.getMarksheet = async (req, res) => {
     if (student_id) { studentFilter = 'AND sm.student_id = ?'; params.push(student_id); }
 
     const [rows] = await pool.execute(
-      `SELECT sm.*, sm.is_absent, s.full_name as student_name, s.roll_no,
-       sub.name as subject_name, sub.code,
+      `SELECT sm.*, sm.is_absent, s.full_name as student_name, s.roll_no, sub.name as subject_name, sub.code,
        '${exam_type_id}' as exam_type_name, c.name as class_name, ser.overall_remark
        FROM student_marks sm
        JOIN students s ON sm.student_id = s.id
@@ -248,14 +222,12 @@ exports.getMarksheet = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// Teacher Assignments & Remarks - Intact
+// Teacher Assigned & Remarks - Intact
 exports.getTeacherAssignedSubjects = async (req, res) => {
   try {
     const { teacher_id } = req.query;
     const tid = teacher_id || req.user.id;
-    const [rows] = await pool.execute(`
-      SELECT tas.*, s.name as subject_name, s.code FROM teacher_assigned_subjects tas JOIN subjects s ON tas.subject_id = s.id WHERE tas.teacher_id = ? ORDER BY s.name
-    `, [tid]);
+    const [rows] = await pool.execute(`SELECT tas.*, s.name as subject_name, s.code FROM teacher_assigned_subjects tas JOIN subjects s ON tas.subject_id = s.id WHERE tas.teacher_id = ? ORDER BY s.name`, [tid]);
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -300,11 +272,7 @@ exports.saveRemarks = async (req, res) => {
     effectiveClassId = parseInt(effectiveClassId);
     if (!effectiveClassId || isNaN(effectiveClassId)) return res.status(400).json({ message: 'Invalid class ID.' });
     for (const { student_id, overall_remark } of remarks) {
-      await pool.execute(
-        `INSERT INTO student_exam_remarks (student_id, class_id, exam_type_id, academic_year, overall_remark, marked_by)
-         VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE overall_remark=?, marked_by=?`,
-        [student_id, effectiveClassId, exam_type_id, academic_year, overall_remark || '', req.user.id, overall_remark || '', req.user.id]
-      );
+      await pool.execute(`INSERT INTO student_exam_remarks (student_id, class_id, exam_type_id, academic_year, overall_remark, marked_by) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE overall_remark=?, marked_by=?`, [student_id, effectiveClassId, exam_type_id, academic_year, overall_remark || '', req.user.id, overall_remark || '', req.user.id]);
     }
     res.json({ message: 'Remarks saved successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }

@@ -1,6 +1,6 @@
 const pool = require('../config/db');
 
-// ─── UPGRADE DATABASE SCHEMA FOR PASS MARKS INCLUSIONS ───
+// ─── COMPLETE SAFE DATABASE STRUCT INITIALIZER ───
 pool.execute(`
   CREATE TABLE IF NOT EXISTS exam_subject_config (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -8,24 +8,21 @@ pool.execute(`
     exam_type VARCHAR(50) NOT NULL,
     subject_id INT NOT NULL,
     max_marks INT NOT NULL,
-    pass_marks INT NOT NULL DEFAULT 7,
+    pass_marks INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
     FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE,
     UNIQUE KEY unique_class_exam_subject (class_id, exam_type, subject_id)
   )
 `).then(() => {
-  // Safe validation check if pass_marks missing inside older container run
   pool.execute("SHOW COLUMNS FROM exam_subject_config LIKE 'pass_marks'")
     .then(([cols]) => {
       if(!cols.length) {
         pool.execute("ALTER TABLE exam_subject_config ADD COLUMN pass_marks INT NOT NULL DEFAULT 7");
       }
     });
-  console.log('CRITICAL LOG: exam_subject_config table with Pass Marks successfully loaded!');
-}).catch(err => {
-  console.error('Database structure load error:', err.message);
-});
+  console.log('CRITICAL LOG: exam_subject_config matrix engine running clean!');
+}).catch(err => console.error('Database configuration load error:', err.message));
 
 // Classes Management - Fully Intact
 exports.getClasses = async (req, res) => {
@@ -114,7 +111,7 @@ exports.deleteRole = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// ─── EXAM MATRICES CONFIG WITH LIVE VARIATION INJECTORS ───
+// ─── UPDATED ACTION MAPPERS WITH ATTACHED REMOVAL LOGICS ───
 exports.getExamSettings = async (req, res) => {
   try {
     const [rows] = await pool.execute(`
@@ -122,6 +119,7 @@ exports.getExamSettings = async (req, res) => {
       FROM exam_subject_config esc
       JOIN subjects s ON esc.subject_id = s.id
       JOIN classes c ON esc.class_id = c.id
+      ORDER BY c.id, esc.exam_type
     `);
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -134,7 +132,14 @@ exports.saveExamSettings = async (req, res) => {
       INSERT INTO exam_subject_config (class_id, exam_type, subject_id, max_marks, pass_marks)
       VALUES (?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE max_marks = VALUES(max_marks), pass_marks = VALUES(pass_marks)
-    `, [class_id, exam_type, subject_id, max_marks, pass_marks || 7]);
-    res.json({ message: 'Exam criteria mapped successfully!' });
+    `, [class_id, exam_type, subject_id, max_marks, pass_marks]);
+    res.json({ message: 'Exam configuration profile synchronized!' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
+exports.deleteExamSetting = async (req, res) => {
+  try {
+    await pool.execute('DELETE FROM exam_subject_config WHERE id = ?', [req.params.id]);
+    res.json({ message: 'Configuration criteria entry deleted successfully!' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
