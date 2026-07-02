@@ -96,11 +96,15 @@ exports.updateExamType = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
+// ─── ADD-ON EXAM TYPE CONTROLLER ACTIONS TO PREVENT ROUTE CRASH ───
 exports.deleteExamType = async (req, res) => {
   try {
-    await pool.execute('DELETE FROM exam_types WHERE id=?', [req.params.id]);
-    res.json({ message: 'Exam type deleted' });
-  } catch (err) { res.status(500).json({ message: err.message }); }
+    const { id } = req.params;
+    await pool.execute('DELETE FROM exam_types WHERE id = ?', [id]);
+    res.json({ message: 'Exam type deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };
 
 // ── MARKS ─────────────────────────────────────────────────────

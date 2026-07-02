@@ -21,7 +21,7 @@ pool.execute(`
     await pool.execute("ALTER TABLE exam_subject_config ADD COLUMN pass_marks INT NOT NULL DEFAULT 7");
   }
 
-  // 2. CRITICAL FIX: Convert student_marks table column to VARCHAR to accept 'Unit 1', 'Semester 1'
+  // 2. CRITICAL FIX: Convert student_marks table column to VARCHAR to accept dynamic exam strings
   try {
     await pool.execute("ALTER TABLE student_marks MODIFY COLUMN exam_type_id VARCHAR(50) NOT NULL");
     console.log("SCHEMA DUAL INTEGRITY: student_marks column migrated to VARCHAR successfully.");
@@ -43,18 +43,21 @@ exports.getClasses = async (req, res) => {
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.addClass = async (req, res) => {
   try {
     await pool.execute('INSERT INTO classes (name) VALUES (?)', [req.body.name]);
     res.json({ message: 'Class added' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.updateClass = async (req, res) => {
   try {
     await pool.execute('UPDATE classes SET name=? WHERE id=?', [req.body.name, req.params.id]);
     res.json({ message: 'Class updated' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.deleteClass = async (req, res) => {
   try {
     await pool.execute('DELETE FROM classes WHERE id=?', [req.params.id]);
@@ -69,18 +72,21 @@ exports.getFeeTypes = async (req, res) => {
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.addFeeType = async (req, res) => {
   try {
     await pool.execute('INSERT INTO fee_types (name, amount) VALUES (?,?)', [req.body.name, req.body.amount || 0]);
     res.json({ message: 'Fee type added' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.updateFeeType = async (req, res) => {
   try {
     await pool.execute('UPDATE fee_types SET name=?, amount=? WHERE id=?', [req.body.name, req.body.amount || 0, req.params.id]);
     res.json({ message: 'Fee type updated' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.deleteFeeType = async (req, res) => {
   try {
     await pool.execute('DELETE FROM fee_types WHERE id=?', [req.params.id]);
@@ -102,6 +108,7 @@ exports.getRoles = async (req, res) => {
     }));
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.addRole = async (req, res) => {
   try {
     const access = Array.isArray(req.body.access) ? req.body.access : [];
@@ -109,6 +116,7 @@ exports.addRole = async (req, res) => {
     res.json({ message: 'Role added' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.updateRole = async (req, res) => {
   try {
     const access = Array.isArray(req.body.access) ? req.body.access : [];
@@ -116,6 +124,7 @@ exports.updateRole = async (req, res) => {
     res.json({ message: 'Role updated' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
+
 exports.deleteRole = async (req, res) => {
   try {
     await pool.execute('DELETE FROM roles WHERE id=?', [req.params.id]);
@@ -123,7 +132,7 @@ exports.deleteRole = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// Exam Setting Matrix Controllers
+// ─── ADD-ON EXAM MAPPINGS AND DELETION CONTROL MATRIX — FULLY ACTIVE ───
 exports.getExamSettings = async (req, res) => {
   try {
     const [rows] = await pool.execute(`
@@ -131,7 +140,7 @@ exports.getExamSettings = async (req, res) => {
       FROM exam_subject_config esc
       JOIN subjects s ON esc.subject_id = s.id
       JOIN classes c ON esc.class_id = c.id
-      ORDER BY c.id, esc.exam_type
+      ORDER BY c.name, esc.exam_type
     `);
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -144,14 +153,14 @@ exports.saveExamSettings = async (req, res) => {
       INSERT INTO exam_subject_config (class_id, exam_type, subject_id, max_marks, pass_marks)
       VALUES (?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE max_marks = VALUES(max_marks), pass_marks = VALUES(pass_marks)
-    `, [class_id, exam_type, subject_id, max_marks, pass_marks]);
-    res.json({ message: 'Exam configuration profile synchronized!' });
+    `, [class_id, exam_type, subject_id, max_marks, pass_marks || 7]);
+    res.json({ message: 'Exam criteria mapped successfully!' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
 exports.deleteExamSetting = async (req, res) => {
   try {
     await pool.execute('DELETE FROM exam_subject_config WHERE id = ?', [req.params.id]);
-    res.json({ message: 'Configuration criteria entry deleted successfully!' });
+    res.json({ message: 'Exam configuration deleted successfully!' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
