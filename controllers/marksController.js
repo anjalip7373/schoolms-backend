@@ -84,23 +84,39 @@ exports.removeClassSubject = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// Unified Exam Profiles
+// ─── FULLY UPGRADED EXAM TYPES DATABASE HANDLERS (ADMIN CONFIGURABLE) ───
 exports.getExamTypes = async (req, res) => {
   try {
-    res.json([
-      { id: 'Unit 1', name: 'Unit 1' },
-      { id: 'Unit 2', name: 'Unit 2' },
-      { id: 'Semester 1', name: 'Semester 1' },
-      { id: 'Semester 2', name: 'Semester 2' }
-    ]);
+    const [rows] = await pool.execute('SELECT * FROM exam_types ORDER BY id');
+    res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-exports.addExamType = async (req, res) => { res.json({ message: 'Static sequence bypass' }); };
-exports.updateExamType = async (req, res) => { res.json({ message: 'Static sequence bypass' }); };
-exports.deleteExamType = async (req, res) => { res.json({ message: 'Static sequence bypass' }); };
+exports.addExamType = async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ message: 'Exam type name required.' });
+    await pool.execute('INSERT INTO exam_types (name) VALUES (?)', [name]);
+    res.json({ message: 'Exam type added successfully' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
 
-// Marks Entry Dynamic Processor
+exports.updateExamType = async (req, res) => {
+  try {
+    const { name } = req.body;
+    await pool.execute('UPDATE exam_types SET name=? WHERE id=?', [name, req.params.id]);
+    res.json({ message: 'Exam type updated successfully' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
+exports.deleteExamType = async (req, res) => {
+  try {
+    await pool.execute('DELETE FROM exam_types WHERE id=?', [req.params.id]);
+    res.json({ message: 'Exam type deleted successfully' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
+// ── MARKS ENTRY DYNAMIC PROCESSOR ──────────────────────────────
 exports.getMarks = async (req, res) => {
   try {
     const { class_id, exam_type_id, academic_year } = req.query;
@@ -222,14 +238,28 @@ exports.getMarksheet = async (req, res) => {
     const activeExamString = isNaN(parseInt(exam_type_id)) ? exam_type_id : mapIdToExamType(exam_type_id);
     const databaseIntegerId = mapExamTypeToId(exam_type_id);
 
-    const [configRows] = await pool.execute(
-      `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`,
-      [class_id, activeExamString]
-    );
+    // If "Final Exam" is selected, fetch all marks configurations to avoid filtering errors
+    let configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`;
+    let configParams = [class_id, activeExamString];
+    if (activeExamString.toLowerCase().includes('final')) {
+      configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ?`;
+      configParams = [class_id];
+    }
+
+    const [configRows] = await pool.execute(configQuery, configParams);
 
     let studentFilter = '';
-    const params = [class_id, exam_type_id, databaseIntegerId, academic_year];
+    const params = [class_id];
     if (student_id) { studentFilter = 'AND sm.student_id = ?'; params.push(student_id); }
+    params.push(academic_year);
+
+    // If final exam, fetch all year records, otherwise narrow down to selected exam criteria logs
+    let examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = ?)`;
+    if (activeExamString.toLowerCase().includes('final')) {
+      examConditionalFilter = `AND sm.exam_type_id IN (1, 2, 3, 4, 'Unit 1', 'Unit 2', 'Semester 1', 'Semester 2')`;
+    } else {
+      params.unshift(exam_type_id, databaseIntegerId);
+    }
 
     const [rows] = await pool.execute(
       `SELECT sm.*, sm.is_absent, s.full_name as student_name, s.roll_no, sub.name as subject_name, sub.code,
@@ -238,10 +268,10 @@ exports.getMarksheet = async (req, res) => {
        JOIN students s ON sm.student_id = s.id
        JOIN subjects sub ON sm.subject_id = sub.id
        JOIN classes c ON sm.class_id = c.id
-       LEFT JOIN student_exam_remarks ser ON ser.student_id = sm.student_id AND (ser.exam_type_id = sm.exam_type_id OR ser.exam_type_id = ?) AND ser.academic_year = sm.academic_year
-       WHERE sm.class_id = ? AND (sm.exam_type_id = ? OR sm.exam_type_id = ?) AND sm.academic_year = ?
+       LEFT JOIN student_exam_remarks ser ON ser.student_id = sm.student_id AND ser.academic_year = sm.academic_year
+       WHERE sm.class_id = ? ${examConditionalFilter} AND sm.academic_year = ?
        ${studentFilter} ORDER BY s.roll_no, sub.name`,
-      [databaseIntegerId, class_id, exam_type_id, databaseIntegerId, academic_year, ...(student_id ? [student_id] : [])]
+      params
     );
 
     const updatedRows = rows.map(r => {
