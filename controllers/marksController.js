@@ -1,25 +1,5 @@
 const pool = require('../config/db');
 
-// UTILITY ENGINE: Map string exam profile names seamlessly to legacy integers inside database storage logs
-const mapExamTypeToId = (exam_type_id) => {
-  if (!exam_type_id) return 1;
-  const str = String(exam_type_id).trim();
-  if (str === 'Unit 1') return 1;
-  if (str === 'Unit 2') return 2;
-  if (str === 'Semester 1') return 3;
-  if (str === 'Semester 2') return 4;
-  return isNaN(parseInt(str)) ? 1 : parseInt(str);
-};
-
-const mapIdToExamType = (id) => {
-  const val = parseInt(id);
-  if (val === 1) return 'Unit 1';
-  if (val === 2) return 'Unit 2';
-  if (val === 3) return 'Semester 1';
-  if (val === 4) return 'Semester 2';
-  return 'Unit 1';
-};
-
 // ── SUBJECTS ──────────────────────────────────────────────────
 exports.getSubjects = async (req, res) => {
   try {
@@ -30,16 +10,22 @@ exports.getSubjects = async (req, res) => {
 
 exports.addSubject = async (req, res) => {
   try {
-    const { name, code } = req.body;
-    await pool.execute('INSERT INTO subjects (name, code, max_marks, pass_marks) VALUES (?,?,100,35)', [name, code || null]);
+    const { name, code, max_marks, pass_marks } = req.body;
+    await pool.execute(
+      'INSERT INTO subjects (name, code, max_marks, pass_marks) VALUES (?,?,?,?)',
+      [name, code || null, max_marks || 100, pass_marks || 35]
+    );
     res.json({ message: 'Subject added successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
 exports.updateSubject = async (req, res) => {
   try {
-    const { name, code } = req.body;
-    await pool.execute('UPDATE subjects SET name=?, code=? WHERE id=?', [name, code || null, req.params.id]);
+    const { name, code, max_marks, pass_marks } = req.body;
+    await pool.execute(
+      'UPDATE subjects SET name=?, code=?, max_marks=?, pass_marks=? WHERE id=?',
+      [name, code || null, max_marks || 100, pass_marks || 35, req.params.id]
+    );
     res.json({ message: 'Subject updated successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -57,13 +43,21 @@ exports.getClassSubjects = async (req, res) => {
     const { class_id } = req.query;
     if (!class_id) {
       const [rows] = await pool.execute(`
-        SELECT cs.*, s.name as subject_name, s.code, c.name as class_name
-        FROM class_subjects cs JOIN subjects s ON cs.subject_id = s.id JOIN classes c ON cs.class_id = c.id ORDER BY c.name, s.name
+        SELECT cs.*, s.name as subject_name, s.code, s.max_marks, s.pass_marks,
+        c.name as class_name
+        FROM class_subjects cs
+        JOIN subjects s ON cs.subject_id = s.id
+        JOIN classes c ON cs.class_id = c.id
+        ORDER BY c.name, s.name
       `);
       return res.json(rows);
     }
     const [rows] = await pool.execute(`
-      SELECT cs.*, s.name as subject_name, s.code FROM class_subjects cs JOIN subjects s ON cs.subject_id = s.id WHERE cs.class_id = ? ORDER BY s.name
+      SELECT cs.*, s.name as subject_name, s.code, s.max_marks, s.pass_marks
+      FROM class_subjects cs
+      JOIN subjects s ON cs.subject_id = s.id
+      WHERE cs.class_id = ?
+      ORDER BY s.name
     `, [class_id]);
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -72,51 +66,44 @@ exports.getClassSubjects = async (req, res) => {
 exports.assignClassSubject = async (req, res) => {
   try {
     const { class_id, subject_id } = req.body;
-    await pool.execute(`INSERT IGNORE INTO class_subjects (class_id, subject_id) VALUES (?,?)`, [class_id, subject_id]);
+    await pool.execute(
+      `INSERT IGNORE INTO class_subjects (class_id, subject_id) VALUES (?,?)`,
+      [class_id, subject_id]
+    );
     res.json({ message: 'Subject assigned to class' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-exports.removeClassSubject = async (req, res) => {
-  try {
-    await pool.execute('DELETE FROM class_subjects WHERE id=?', [req.params.id]);
-    res.json({ message: 'Subject removed from class' });
-  } catch (err) { res.status(500).json({ message: err.message }); }
-};
-
-// ─── FULLY UPGRADED EXAM TYPES DATABASE HANDLERS (ADMIN CONFIGURABLE) ───
+// ── EXAM TYPES ────────────────────────────────────────────────
 exports.getExamTypes = async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT * FROM exam_types ORDER BY id');
+    const [rows] = await pool.execute('SELECT * FROM exam_types ORDER BY name');
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
 exports.addExamType = async (req, res) => {
   try {
-    const { name } = req.body;
-    if (!name) return res.status(400).json({ message: 'Exam type name required.' });
-    await pool.execute('INSERT INTO exam_types (name) VALUES (?)', [name]);
-    res.json({ message: 'Exam type added successfully' });
+    await pool.execute('INSERT INTO exam_types (name) VALUES (?)', [req.body.name]);
+    res.json({ message: 'Exam type added' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
 exports.updateExamType = async (req, res) => {
   try {
-    const { name } = req.body;
-    await pool.execute('UPDATE exam_types SET name=? WHERE id=?', [name, req.params.id]);
-    res.json({ message: 'Exam type updated successfully' });
+    await pool.execute('UPDATE exam_types SET name=? WHERE id=?', [req.body.name, req.params.id]);
+    res.json({ message: 'Exam type updated' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
 exports.deleteExamType = async (req, res) => {
   try {
     await pool.execute('DELETE FROM exam_types WHERE id=?', [req.params.id]);
-    res.json({ message: 'Exam type deleted successfully' });
+    res.json({ message: 'Exam type deleted' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// ── MARKS ENTRY DYNAMIC PROCESSOR ──────────────────────────────
+// ── MARKS ─────────────────────────────────────────────────────
 exports.getMarks = async (req, res) => {
   try {
     const { class_id, exam_type_id, academic_year } = req.query;
@@ -124,41 +111,55 @@ exports.getMarks = async (req, res) => {
 
     let effectiveClassId = class_id;
     if (userRole === 'Teacher' || userRole === 'teacher') {
-      const [empRows] = await pool.execute('SELECT class_assigned FROM users WHERE id=?', [req.user.id]);
+      const [empRows] = await pool.execute(
+        'SELECT class_assigned FROM users WHERE id=?', [req.user.id]
+      );
       effectiveClassId = empRows[0]?.class_assigned;
     }
 
     if (!effectiveClassId) return res.status(400).json({ message: 'Please select a class' });
 
+    // Resolved Exam Type Name to handle alphanumeric entries seamlessly
+    let examName = exam_type_id;
+    if (!isNaN(parseInt(exam_type_id))) {
+      const [etRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [exam_type_id]);
+      if (etRows.length > 0) examName = etRows[0].name;
+    }
+
     const [students] = await pool.execute(
-      `SELECT s.id, s.roll_no, s.full_name FROM students s WHERE s.class_id = ? AND s.is_active = 1 ORDER BY s.roll_no`,
+      `SELECT s.id, s.roll_no, s.full_name FROM students s
+       WHERE s.class_id = ? AND s.is_active = 1 ORDER BY s.roll_no`,
       [effectiveClassId]
     );
 
-    const activeExamString = isNaN(parseInt(exam_type_id)) ? exam_type_id : mapIdToExamType(exam_type_id);
-    const mappedIntegerId = mapExamTypeToId(exam_type_id);
-
+    // Fetch marks thresholds dynamically mapped inside configurations
     const [configRows] = await pool.execute(
-      `SELECT esc.subject_id, esc.max_marks, esc.pass_marks FROM exam_subject_config esc WHERE esc.class_id = ? AND esc.exam_type = ?`,
-      [effectiveClassId, activeExamString || 'Unit 1']
+      `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config 
+       WHERE class_id = ? AND exam_type = ?`,
+      [effectiveClassId, examName]
     );
 
     const [baseSubjects] = await pool.execute(`
-      SELECT s.* FROM class_subjects cs JOIN subjects s ON cs.subject_id = s.id WHERE cs.class_id = ? ORDER BY s.name
+      SELECT s.*, cs.id as class_subject_id
+      FROM class_subjects cs
+      JOIN subjects s ON cs.subject_id = s.id
+      WHERE cs.class_id = ?
+      ORDER BY s.name
     `, [effectiveClassId]);
 
     const subjects = baseSubjects.map(sub => {
       const cfg = configRows.find(c => c.subject_id === sub.id);
       return {
         ...sub,
-        max_marks: cfg ? cfg.max_marks : (activeExamString?.startsWith('Unit') ? 20 : 100),
-        pass_marks: cfg ? cfg.pass_marks : (activeExamString?.startsWith('Unit') ? 7 : 35)
+        max_marks: cfg ? cfg.max_marks : (sub.max_marks || 100),
+        pass_marks: cfg ? cfg.pass_marks : (sub.pass_marks || 35)
       };
     });
 
     const [marks] = await pool.execute(
-      `SELECT sm.* FROM student_marks sm WHERE sm.class_id = ? AND (sm.exam_type_id = ? OR sm.exam_type_id = ?) AND sm.academic_year = ?`,
-      [effectiveClassId, exam_type_id, mappedIntegerId, academic_year]
+      `SELECT sm.* FROM student_marks sm
+       WHERE sm.class_id = ? AND (sm.exam_type_id = ? OR sm.exam_type_id = (SELECT id FROM exam_types WHERE name=? LIMIT 1)) AND sm.academic_year = ?`,
+      [effectiveClassId, exam_type_id, examName, academic_year]
     );
 
     const marksMap = {};
@@ -171,7 +172,7 @@ exports.getMarks = async (req, res) => {
       };
     });
 
-    res.json({ students, subjects, marksMap, class_id: effectiveClassId });
+    res.json({ students, subjects, marksMap });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
@@ -182,38 +183,54 @@ exports.saveMarks = async (req, res) => {
 
     let effectiveClassId = class_id;
     if (userRole === 'Teacher' || userRole === 'teacher') {
-      const [empRows] = await pool.execute('SELECT class_assigned FROM users WHERE id=?', [req.user.id]);
+      const [empRows] = await pool.execute(
+        'SELECT class_assigned FROM users WHERE id=?', [req.user.id]
+      );
       effectiveClassId = empRows[0]?.class_assigned;
     }
 
     effectiveClassId = parseInt(effectiveClassId);
     if (!effectiveClassId) return res.status(400).json({ message: 'Class ID required' });
 
-    const activeExamString = isNaN(parseInt(exam_type_id)) ? exam_type_id : mapIdToExamType(exam_type_id);
-    const databaseIntegerId = mapExamTypeToId(exam_type_id);
+    let examName = exam_type_id;
+    let numericExamId = isNaN(parseInt(exam_type_id)) ? null : parseInt(exam_type_id);
+    
+    if (numericExamId) {
+      const [etRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [numericExamId]);
+      if (etRows.length > 0) examName = etRows[0].name;
+    } else {
+      const [etRows] = await pool.execute('SELECT id FROM exam_types WHERE name=?', [exam_type_id]);
+      if (etRows.length > 0) numericExamId = etRows[0].id;
+    }
 
     const [configRows] = await pool.execute(
       `SELECT subject_id, max_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`,
-      [effectiveClassId, activeExamString]
+      [effectiveClassId, examName]
     );
+
+    const targetExamIdValue = numericExamId || exam_type_id;
 
     for (const mark of marks) {
       const { student_id, subject_id, marks_obtained, is_absent } = mark;
       const cfg = configRows.find(c => c.subject_id === subject_id);
-      const maxMarks = cfg ? cfg.max_marks : (activeExamString?.startsWith('Unit') ? 20 : 100);
+      const maxMarks = cfg ? cfg.max_marks : 100;
 
       if (is_absent) {
         await pool.execute(
-          `INSERT INTO student_marks (student_id, subject_id, exam_type_id, class_id, academic_year, marks_obtained, max_marks, is_absent, marked_by)
-           VALUES (?,?,?,?,?,NULL,?,1,?) ON DUPLICATE KEY UPDATE marks_obtained=NULL, is_absent=1, marked_by=?`,
-          [student_id, subject_id, databaseIntegerId, effectiveClassId, academic_year, maxMarks, req.user.id, req.user.id]
+          `INSERT INTO student_marks
+           (student_id, subject_id, exam_type_id, class_id, academic_year, marks_obtained, max_marks, is_absent, marked_by)
+           VALUES (?,?,?,?,?,NULL,?,1,?)
+           ON DUPLICATE KEY UPDATE marks_obtained=NULL, is_absent=1, marked_by=?`,
+          [student_id, subject_id, targetExamIdValue, effectiveClassId, academic_year, maxMarks, req.user.id, req.user.id]
         );
       } else {
         if (marks_obtained === '' || marks_obtained === null || marks_obtained === undefined) continue;
         await pool.execute(
-          `INSERT INTO student_marks (student_id, subject_id, exam_type_id, class_id, academic_year, marks_obtained, max_marks, is_absent, marked_by)
-           VALUES (?,?,?,?,?,?,?,0,?) ON DUPLICATE KEY UPDATE marks_obtained=?, max_marks=?, is_absent=0, marked_by=?`,
-          [student_id, subject_id, databaseIntegerId, effectiveClassId, academic_year, marks_obtained, maxMarks, req.user.id, marks_obtained, maxMarks, req.user.id]
+          `INSERT INTO student_marks
+           (student_id, subject_id, exam_type_id, class_id, academic_year, marks_obtained, max_marks, is_absent, marked_by)
+           VALUES (?,?,?,?,?,?,?,0,?)
+           ON DUPLICATE KEY UPDATE marks_obtained=?, max_marks=?, is_absent=0, marked_by=?`,
+          [student_id, subject_id, targetExamIdValue, effectiveClassId, academic_year, marks_obtained, maxMarks, req.user.id, marks_obtained, maxMarks, req.user.id]
         );
       }
     }
@@ -235,17 +252,20 @@ exports.getMarksheet = async (req, res) => {
     if (!class_id) return res.status(400).json({ message: 'No class assigned.' });
     if (!exam_type_id) return res.status(400).json({ message: 'exam_type_id is required' });
 
-    const activeExamString = isNaN(parseInt(exam_type_id)) ? exam_type_id : mapIdToExamType(exam_type_id);
-    const databaseIntegerId = mapExamTypeToId(exam_type_id);
+    let examName = exam_type_id;
+    if (!isNaN(parseInt(exam_type_id))) {
+      const [etRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [exam_type_id]);
+      if (etRows.length > 0) examName = etRows[0].name;
+    }
 
-    // If "Final Exam" is selected, fetch all marks configurations to avoid filtering errors
+    const isFinalCumulative = examName.toLowerCase().includes('final') || examName.toLowerCase().includes('annual');
+
     let configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`;
-    let configParams = [class_id, activeExamString];
-    if (activeExamString.toLowerCase().includes('final')) {
+    let configParams = [class_id, examName];
+    if (isFinalCumulative) {
       configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ?`;
       configParams = [class_id];
     }
-
     const [configRows] = await pool.execute(configQuery, configParams);
 
     let studentFilter = '';
@@ -253,17 +273,17 @@ exports.getMarksheet = async (req, res) => {
     if (student_id) { studentFilter = 'AND sm.student_id = ?'; params.push(student_id); }
     params.push(academic_year);
 
-    // If final exam, fetch all year records, otherwise narrow down to selected exam criteria logs
-    let examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = ?)`;
-    if (activeExamString.toLowerCase().includes('final')) {
-      examConditionalFilter = `AND sm.exam_type_id IN (1, 2, 3, 4, 'Unit 1', 'Unit 2', 'Semester 1', 'Semester 2')`;
+    let examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = (SELECT id FROM exam_types WHERE name=? LIMIT 1))`;
+    if (isFinalCumulative) {
+      examConditionalFilter = `AND sm.exam_type_id IS NOT NULL`;
     } else {
-      params.unshift(exam_type_id, databaseIntegerId);
+      params.unshift(exam_type_id, examName);
     }
 
     const [rows] = await pool.execute(
-      `SELECT sm.*, sm.is_absent, s.full_name as student_name, s.roll_no, sub.name as subject_name, sub.code,
-       '${activeExamString}' as exam_type_name, c.name as class_name, ser.overall_remark
+      `SELECT sm.*, sm.is_absent, s.full_name as student_name, s.roll_no,
+       sub.name as subject_name, sub.code,
+       '${examName}' as exam_type_name, c.name as class_name, ser.overall_remark
        FROM student_marks sm
        JOIN students s ON sm.student_id = s.id
        JOIN subjects sub ON sm.subject_id = sub.id
@@ -278,8 +298,8 @@ exports.getMarksheet = async (req, res) => {
       const cfg = configRows.find(c => c.subject_id === r.subject_id);
       return {
         ...r,
-        max_marks: cfg ? cfg.max_marks : (activeExamString?.startsWith('Unit') ? 20 : 100),
-        pass_marks: cfg ? cfg.pass_marks : (activeExamString?.startsWith('Unit') ? 7 : 35)
+        max_marks: cfg ? cfg.max_marks : 100,
+        pass_marks: cfg ? cfg.pass_marks : 35
       };
     });
 
@@ -287,16 +307,15 @@ exports.getMarksheet = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// Teacher Assigned & Remarks - Fully Intact
+// Teacher Assignments & Remarks - Fully Intact
 exports.getTeacherAssignedSubjects = async (req, res) => {
   try {
     const { teacher_id } = req.query;
     const tid = teacher_id || req.user.id;
-    const [rows] = await pool.execute(`SELECT tas.*, s.name as subject_name, s.code FROM teacher_assigned_subjects tas JOIN subjects s ON tas.subject_id = s.id WHERE tas.teacher_id = ? ORDER BY s.name`, [tid]);
+    const [rows] = await pool.execute(`SELECT tas.*, s.name as subject_name, s.code, s.max_marks FROM teacher_assigned_subjects tas JOIN subjects s ON tas.subject_id = s.id WHERE tas.teacher_id = ? ORDER BY s.name`, [tid]);
     res.json(rows);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
-
 exports.saveTeacherAssignedSubjects = async (req, res) => {
   try {
     const { teacher_id, subject_ids } = req.body;
@@ -309,7 +328,6 @@ exports.saveTeacherAssignedSubjects = async (req, res) => {
     res.json({ message: 'Teacher subjects updated' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
-
 exports.getRemarks = async (req, res) => {
   try {
     const { class_id, exam_type_id, academic_year } = req.query;
@@ -321,15 +339,12 @@ exports.getRemarks = async (req, res) => {
     }
     effectiveClassId = parseInt(effectiveClassId);
     if (!effectiveClassId || isNaN(effectiveClassId)) return res.json({});
-    
-    const databaseIntegerId = mapExamTypeToId(exam_type_id);
-    const [rows] = await pool.execute(`SELECT * FROM student_exam_remarks WHERE class_id = ? AND (exam_type_id = ? OR exam_type_id = ?) AND academic_year = ?`, [effectiveClassId, exam_type_id, databaseIntegerId, academic_year]);
+    const [rows] = await pool.execute(`SELECT * FROM student_exam_remarks WHERE class_id = ? AND exam_type_id = ? AND academic_year = ?`, [effectiveClassId, exam_type_id, academic_year]);
     const map = {};
     rows.forEach(r => { map[r.student_id] = r.overall_remark; });
     res.json(map);
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
-
 exports.saveRemarks = async (req, res) => {
   try {
     const { class_id, exam_type_id, academic_year, remarks } = req.body;
@@ -341,10 +356,8 @@ exports.saveRemarks = async (req, res) => {
     }
     effectiveClassId = parseInt(effectiveClassId);
     if (!effectiveClassId || isNaN(effectiveClassId)) return res.status(400).json({ message: 'Invalid class ID.' });
-    
-    const databaseIntegerId = mapExamTypeToId(exam_type_id);
     for (const { student_id, overall_remark } of remarks) {
-      await pool.execute(`INSERT INTO student_exam_remarks (student_id, class_id, exam_type_id, academic_year, overall_remark, marked_by) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE overall_remark=?, marked_by=?`, [student_id, effectiveClassId, databaseIntegerId, academic_year, overall_remark || '', req.user.id, overall_remark || '', req.user.id]);
+      await pool.execute(`INSERT INTO student_exam_remarks (student_id, class_id, exam_type_id, academic_year, overall_remark, marked_by) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE overall_remark=?, marked_by=?`, [student_id, effectiveClassId, exam_type_id, academic_year, overall_remark || '', req.user.id, overall_remark || '', req.user.id]);
     }
     res.json({ message: 'Remarks saved successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }
