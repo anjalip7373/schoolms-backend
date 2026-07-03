@@ -319,7 +319,6 @@ exports.getMarksheet = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 // Teacher Assignments & Remarks - Fully Intact
 exports.getTeacherAssignedSubjects = async (req, res) => {
   try {
