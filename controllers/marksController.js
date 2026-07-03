@@ -243,8 +243,8 @@ exports.getMarksheet = async (req, res) => {
     if (!exam_type_id) return res.status(400).json({ message: 'exam_type_id is required' });
     if (!academic_year) return res.status(400).json({ message: 'academic_year is required' });
 
-    // Handle alphanumeric dynamic exam identifiers gracefully
-    let examName = exam_type_id;
+    // ─── ADD-ON lookup: Resolve exact alphanumeric string value ───
+    let examName = String(exam_type_id).trim();
     if (!isNaN(parseInt(exam_type_id))) {
       const [etRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [exam_type_id]);
       if (etRows.length > 0) examName = etRows[0].name;
@@ -252,7 +252,7 @@ exports.getMarksheet = async (req, res) => {
 
     const isFinalCumulative = examName.toLowerCase().includes('final') || examName.toLowerCase().includes('annual');
 
-    // ─── ADD-ON: FETCH DYNAMIC PROFILE configurations FOR MAX/PASS MARKS ───
+    // ─── ADD-ON: FETCH CONFIGURATIONS FOR THE SELECT CRITERIA ───
     let configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`;
     let configParams = [class_id, examName];
     if (isFinalCumulative) {
@@ -269,7 +269,7 @@ exports.getMarksheet = async (req, res) => {
     }
     params.push(academic_year);
 
-    // Dynamic processing condition parameters setup
+    // ─── CRITICAL SELECTION LAYER: FORCE MATCH THE RECORD VIA BOTH ID OR STRING NAME ───
     let examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = ? OR sm.exam_type_id = (SELECT id FROM exam_types WHERE name=? LIMIT 1))`;
     if (isFinalCumulative) {
       examConditionalFilter = `AND sm.exam_type_id IS NOT NULL`;
@@ -277,7 +277,6 @@ exports.getMarksheet = async (req, res) => {
       params.unshift(exam_type_id, examName, examName);
     }
 
-    // SAFE COMPATIBILITY JOIN: Changed from strict et.id join to accommodate string identifiers safely
     const [rows] = await pool.execute(
       `SELECT sm.*, sm.is_absent,
        s.full_name as student_name, s.roll_no,
@@ -297,7 +296,7 @@ exports.getMarksheet = async (req, res) => {
       params
     );
 
-    // Map the thresholds fetched from exam_subject_config live data layer
+    // Bind thresholds dynamically from the exam configurations matrix layers
     const updatedRows = rows.map(r => {
       const cfg = configRows.find(c => c.subject_id === r.subject_id);
       return {
