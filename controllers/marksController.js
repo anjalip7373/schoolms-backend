@@ -231,14 +231,19 @@ exports.getMarksheet = async (req, res) => {
     let { class_id } = req.query;
     const userRole = req.user.role;
 
+    // ✅ Resolve class_id from user profile for teachers safely
     if (userRole === 'Teacher' || userRole === 'teacher') {
-      const [empRows] = await pool.execute('SELECT class_assigned FROM users WHERE id=?', [req.user.id]);
+      const [empRows] = await pool.execute(
+        'SELECT class_assigned FROM users WHERE id=?', [req.user.id]
+      );
       class_id = empRows[0]?.class_assigned;
     }
 
-    if (!class_id) return res.status(400).json({ message: 'No class assigned.' });
+    if (!class_id) return res.status(400).json({ message: 'No class assigned. Please contact admin.' });
     if (!exam_type_id) return res.status(400).json({ message: 'exam_type_id is required' });
+    if (!academic_year) return res.status(400).json({ message: 'academic_year is required' });
 
+    // Handle alphanumeric dynamic exam identifiers gracefully
     let examName = exam_type_id;
     if (!isNaN(parseInt(exam_type_id))) {
       const [etRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [exam_type_id]);
@@ -247,6 +252,7 @@ exports.getMarksheet = async (req, res) => {
 
     const isFinalCumulative = examName.toLowerCase().includes('final') || examName.toLowerCase().includes('annual');
 
+    // ─── ADD-ON: FETCH DYNAMIC PROFILE configurations FOR MAX/PASS MARKS ───
     let configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`;
     let configParams = [class_id, examName];
     if (isFinalCumulative) {
@@ -257,29 +263,41 @@ exports.getMarksheet = async (req, res) => {
 
     let studentFilter = '';
     const params = [class_id];
-    if (student_id) { studentFilter = 'AND sm.student_id = ?'; params.push(student_id); }
+    if (student_id) { 
+      studentFilter = 'AND sm.student_id = ?'; 
+      params.push(student_id); 
+    }
     params.push(academic_year);
 
-    let examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = (SELECT id FROM exam_types WHERE name=? LIMIT 1))`;
+    // Dynamic processing condition parameters setup
+    let examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = ? OR sm.exam_type_id = (SELECT id FROM exam_types WHERE name=? LIMIT 1))`;
     if (isFinalCumulative) {
       examConditionalFilter = `AND sm.exam_type_id IS NOT NULL`;
     } else {
-      params.unshift(exam_type_id, examName);
+      params.unshift(exam_type_id, examName, examName);
     }
 
+    // SAFE COMPATIBILITY JOIN: Changed from strict et.id join to accommodate string identifiers safely
     const [rows] = await pool.execute(
-      `SELECT sm.*, sm.is_absent, s.full_name as student_name, s.roll_no, sub.name as subject_name, sub.code,
-       '${examName}' as exam_type_name, c.name as class_name, ser.overall_remark
+      `SELECT sm.*, sm.is_absent,
+       s.full_name as student_name, s.roll_no,
+       sub.name as subject_name, sub.code,
+       '${examName}' as exam_type_name, c.name as class_name,
+       ser.overall_remark
        FROM student_marks sm
        JOIN students s ON sm.student_id = s.id
        JOIN subjects sub ON sm.subject_id = sub.id
        JOIN classes c ON sm.class_id = c.id
-       LEFT JOIN student_exam_remarks ser ON ser.student_id = sm.student_id AND ser.academic_year = sm.academic_year
+       LEFT JOIN student_exam_remarks ser
+         ON ser.student_id = sm.student_id
+         AND ser.academic_year = sm.academic_year
        WHERE sm.class_id = ? ${examConditionalFilter} AND sm.academic_year = ?
-       ${studentFilter} ORDER BY s.roll_no, sub.name`,
+       ${studentFilter}
+       ORDER BY s.roll_no, sub.name`,
       params
     );
 
+    // Map the thresholds fetched from exam_subject_config live data layer
     const updatedRows = rows.map(r => {
       const cfg = configRows.find(c => c.subject_id === r.subject_id);
       return {
@@ -290,8 +308,12 @@ exports.getMarksheet = async (req, res) => {
     });
 
     res.json(updatedRows);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) { 
+    console.error('getMarksheet Error Trace:', err.message);
+    res.status(500).json({ message: err.message }); 
+  }
 };
+
 
 // Teacher Assignments & Remarks - Fully Intact
 exports.getTeacherAssignedSubjects = async (req, res) => {
