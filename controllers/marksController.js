@@ -246,32 +246,24 @@ exports.getMarksheet = async (req, res) => {
     if (!isNaN(numericExamId)) {
       const [etRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [numericExamId]);
       if (etRows.length > 0) examName = etRows[0].name;
-    } else {
-      const [etRows] = await pool.execute('SELECT id FROM exam_types WHERE name=?', [examName]);
-      if (etRows.length > 0) numericExamId = etRows[0].id;
     }
 
     const isFinalCumulative = examName.toLowerCase().includes('final') || examName.toLowerCase().includes('annual');
 
-    // Fetch marks criteria thresholds mapped securely
-    let configQuery, configParams;
-    if (isFinalCumulative) {
-      configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ?`;
-      configParams = [class_id];
-    } else {
-      configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`;
-      configParams = [class_id, examName];
+    // ✅ FIXED: Fetch config settings separately to avoid SQL Cross-Join multiplication bugs
+    let configQuery = `SELECT subject_id, exam_type, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ?`;
+    let configParams = [class_id];
+    if (!isFinalCumulative) {
+      configQuery += ` AND exam_type = ?`;
+      configParams.push(examName);
     }
     const [configRows] = await pool.execute(configQuery, configParams);
 
-    // ✅ FIXED STLICT CONDITIONAL FILTERS TO SEGREGATE TERM EXPERIENCES
     let examConditionalFilter, examParams;
     if (isFinalCumulative) {
-      // Annual Exam aggregates the complete academic calendar logs
       examConditionalFilter = `AND sm.exam_type_id IS NOT NULL`;
       examParams = [];
     } else {
-      // Normal Selection matches strictly the specified inputs ONLY to prevent layout overflows
       examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = ?)`;
       examParams = [exam_type_id, examName];
     }
@@ -280,8 +272,9 @@ exports.getMarksheet = async (req, res) => {
     const params = [class_id, ...examParams, academic_year];
     if (student_id) params.push(student_id);
 
+    // ✅ FIXED: Stripped the duplicate sub join layers out of raw marks selection mapping
     const [rows] = await pool.execute(
-      `SELECT sm.*, sm.is_absent,
+      `SELECT sm.*,
        s.full_name as student_name, s.roll_no,
        sub.name as subject_name, sub.code,
        '${examName}' as exam_type_name, c.name as class_name,
@@ -300,18 +293,22 @@ exports.getMarksheet = async (req, res) => {
       [...params, class_id]
     );
 
+    // ✅ FIXED: Calculate maximum and passing boundaries programmatically per record object
     const updatedRows = rows.map(r => {
-      const cfg = configRows.find(c => c.subject_id === r.subject_id);
+      // Find the specific config for this subject and exam_type
+      const cfg = configRows.find(c => c.subject_id === r.subject_id && String(c.exam_type).toLowerCase() === String(r.exam_type_id).toLowerCase());
+      const fallbackCfg = configRows.find(c => c.subject_id === r.subject_id);
+      
       return {
         ...r,
-        max_marks: cfg ? cfg.max_marks : (r.max_marks || 100),
-        pass_marks: cfg ? cfg.pass_marks : (r.pass_marks || 35)
+        max_marks: cfg ? cfg.max_marks : (fallbackCfg ? fallbackCfg.max_marks : 100),
+        pass_marks: cfg ? cfg.pass_marks : (fallbackCfg ? fallbackCfg.pass_marks : 35)
       };
     });
 
     res.json(updatedRows);
   } catch (err) {
-    console.error('getMarksheet Error:', err.message);
+    console.error('getMarksheet Cumulative Matrix Error:', err.message);
     res.status(500).json({ message: err.message });
   }
 };
