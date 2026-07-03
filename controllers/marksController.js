@@ -248,6 +248,12 @@ exports.getMarksheet = async (req, res) => {
       if (etRows.length > 0) examName = etRows[0].name;
     }
 
+    // Resolve the numeric id of the SELECTED exam (needed for remark lookup even when exam_type_id was passed as a name)
+    if (isNaN(numericExamId)) {
+      const [etByName] = await pool.execute('SELECT id FROM exam_types WHERE name = ?', [examName]);
+      if (etByName.length > 0) numericExamId = etByName[0].id;
+    }
+
     const isFinalCumulative = examName.toLowerCase().includes('final') || examName.toLowerCase().includes('annual');
 
     // ✅ FIXED: Fetch config settings separately to avoid SQL Cross-Join multiplication bugs
@@ -258,6 +264,16 @@ exports.getMarksheet = async (req, res) => {
       configParams.push(examName);
     }
     const [configRows] = await pool.execute(configQuery, configParams);
+
+    // ✅ FIXED: Subject-level defaults (max_marks / pass_marks) used as the FINAL fallback tier,
+    // mirroring what the Marks Entry page (getMarks) already does. Previously this fell back to a
+    // hardcoded 100/35, which is why "Drawing" (max 50) was being scored out of 100 in the report.
+    const [subjectDefaults] = await pool.execute(
+      `SELECT id as subject_id, max_marks, pass_marks
+       FROM subjects
+       WHERE id IN (SELECT subject_id FROM class_subjects WHERE class_id = ?)`,
+      [class_id]
+    );
 
     let examConditionalFilter, examParams;
     if (isFinalCumulative) {
@@ -272,20 +288,19 @@ exports.getMarksheet = async (req, res) => {
     const params = [class_id, ...examParams, academic_year];
     if (student_id) params.push(student_id);
 
-    // ✅ FIXED: Stripped the duplicate sub join layers out of raw marks selection mapping
+    // ✅ FIXED: Join exam_types so every row carries its OWN real exam name (sm.exam_type_id can be
+    // Unit Test 1, Unit Test 2, Semester 1... when cumulative/annual pulls every exam). The old code
+    // hardcoded the same '${examName}' string onto every row, which broke per-exam config matching.
     const [rows] = await pool.execute(
       `SELECT sm.*,
        s.full_name as student_name, s.roll_no,
        sub.name as subject_name, sub.code,
-       '${examName}' as exam_type_name, c.name as class_name,
-       ser.overall_remark
+       et.name as exam_type_name, c.name as class_name
        FROM student_marks sm
        JOIN students s ON sm.student_id = s.id
        JOIN subjects sub ON sm.subject_id = sub.id
        JOIN classes c ON sm.class_id = c.id
-       LEFT JOIN student_exam_remarks ser
-         ON ser.student_id = sm.student_id
-         AND ser.academic_year = sm.academic_year
+       JOIN exam_types et ON sm.exam_type_id = et.id
        WHERE sm.class_id = ? ${examConditionalFilter} AND sm.academic_year = ?
        ${studentFilter}
        AND sm.subject_id IN (SELECT subject_id FROM class_subjects WHERE class_id = ?)
@@ -293,16 +308,33 @@ exports.getMarksheet = async (req, res) => {
       [...params, class_id]
     );
 
-    // ✅ FIXED: Calculate maximum and passing boundaries programmatically per record object
+    // ✅ FIXED: Remarks are now fetched separately, keyed to the exam the user actually SELECTED
+    // (e.g. the "Annual" exam type itself), instead of a LEFT JOIN with no exam_type_id condition.
+    // That old join matched on student_id + academic_year only, so a student with remarks saved
+    // against more than one exam type got their student_marks rows duplicated (once per matching
+    // remark row) — silently doubling/tripling totals in the cumulative/annual view.
+    let remarksMap = {};
+    if (numericExamId) {
+      const [remarkRows] = await pool.execute(
+        `SELECT student_id, overall_remark FROM student_exam_remarks WHERE class_id = ? AND exam_type_id = ? AND academic_year = ?`,
+        [class_id, numericExamId, academic_year]
+      );
+      remarkRows.forEach(rr => { remarksMap[rr.student_id] = rr.overall_remark; });
+    }
+
+    // ✅ FIXED: Calculate maximum and passing boundaries programmatically per record object.
+    // cfg now matches on each row's OWN resolved exam name (r.exam_type_name) instead of comparing
+    // a text exam name to a numeric exam_type_id (which could never match), so each underlying exam
+    // (Unit Test 1, Unit Test 2, Semester 1...) picks up its correct max/pass marks when cumulative.
     const updatedRows = rows.map(r => {
-      // Find the specific config for this subject and exam_type
-      const cfg = configRows.find(c => c.subject_id === r.subject_id && String(c.exam_type).toLowerCase() === String(r.exam_type_id).toLowerCase());
-      const fallbackCfg = configRows.find(c => c.subject_id === r.subject_id);
-      
+      const cfg = configRows.find(c => c.subject_id === r.subject_id && String(c.exam_type).toLowerCase() === String(r.exam_type_name).toLowerCase());
+      const subjectDefault = subjectDefaults.find(d => d.subject_id === r.subject_id);
+
       return {
         ...r,
-        max_marks: cfg ? cfg.max_marks : (fallbackCfg ? fallbackCfg.max_marks : 100),
-        pass_marks: cfg ? cfg.pass_marks : (fallbackCfg ? fallbackCfg.pass_marks : 35)
+        max_marks: cfg ? cfg.max_marks : (subjectDefault ? subjectDefault.max_marks : 100),
+        pass_marks: cfg ? cfg.pass_marks : (subjectDefault ? subjectDefault.pass_marks : 35),
+        overall_remark: remarksMap[r.student_id] || null
       };
     });
 
