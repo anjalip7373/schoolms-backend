@@ -242,14 +242,13 @@ exports.getMarksheet = async (req, res) => {
     if (!exam_type_id) return res.status(400).json({ message: 'exam_type_id is required' });
     if (!academic_year) return res.status(400).json({ message: 'academic_year is required' });
 
-    // Resolve exam name from ID
+    // Resolve exam name string safely
     let examName = String(exam_type_id).trim();
     let numericExamId = parseInt(exam_type_id);
     if (!isNaN(numericExamId)) {
       const [etRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [numericExamId]);
       if (etRows.length > 0) examName = etRows[0].name;
     } else {
-      // exam_type_id is a name string — resolve its numeric ID
       const [etRows] = await pool.execute('SELECT id FROM exam_types WHERE name=?', [examName]);
       if (etRows.length > 0) numericExamId = etRows[0].id;
     }
@@ -267,21 +266,21 @@ exports.getMarksheet = async (req, res) => {
     }
     const [configRows] = await pool.execute(configQuery, configParams);
 
-    // Build query params in the CORRECT order matching the SQL placeholders
-    // SQL: WHERE sm.class_id = ? [examFilter] AND sm.academic_year = ? [studentFilter]
+    // Dynamic selection mapping parameters
     let examConditionalFilter, examParams;
     if (isFinalCumulative) {
       examConditionalFilter = `AND sm.exam_type_id IS NOT NULL`;
       examParams = [];
     } else {
-      examConditionalFilter = `AND sm.exam_type_id = ?`;
-      examParams = [numericExamId];
+      // Robust lookup check matching alphanumeric entry data bounds
+      examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = ? OR sm.exam_type_id = (SELECT id FROM exam_types WHERE name=? LIMIT 1))`;
+      examParams = [exam_type_id, examName, examName];
     }
 
     const studentFilter = student_id ? 'AND sm.student_id = ?' : '';
     const studentParams = student_id ? [student_id] : [];
 
-    // Final params order: class_id, ...examParams, academic_year, ...studentParams
+    // Correct exact parameters binding placeholder alignment sequence
     const params = [class_id, ...examParams, academic_year, ...studentParams];
 
     const [rows] = await pool.execute(
@@ -319,6 +318,7 @@ exports.getMarksheet = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 // Teacher Assignments & Remarks - Fully Intact
 exports.getTeacherAssignedSubjects = async (req, res) => {
   try {
