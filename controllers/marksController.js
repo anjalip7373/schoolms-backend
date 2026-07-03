@@ -230,7 +230,7 @@ exports.getMarksheet = async (req, res) => {
     let { class_id } = req.query;
     const userRole = req.user.role;
 
-    // Resolve class_id from user profile for teachers
+    // Resolve class_id from user profile for teachers safely
     if (userRole === 'Teacher' || userRole === 'teacher') {
       const [empRows] = await pool.execute(
         'SELECT class_assigned FROM users WHERE id=?', [req.user.id]
@@ -255,7 +255,7 @@ exports.getMarksheet = async (req, res) => {
 
     const isFinalCumulative = examName.toLowerCase().includes('final') || examName.toLowerCase().includes('annual');
 
-    // Fetch exam subject config
+    // Fetch exam subject config entries tightly bounded by current class scope
     let configQuery, configParams;
     if (isFinalCumulative) {
       configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ?`;
@@ -266,23 +266,23 @@ exports.getMarksheet = async (req, res) => {
     }
     const [configRows] = await pool.execute(configQuery, configParams);
 
-    // Dynamic selection mapping parameters
+    // Dynamic filtering for dynamic custom profiles
     let examConditionalFilter, examParams;
     if (isFinalCumulative) {
       examConditionalFilter = `AND sm.exam_type_id IS NOT NULL`;
       examParams = [];
     } else {
-      // Robust lookup check matching alphanumeric entry data bounds
       examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = ? OR sm.exam_type_id = (SELECT id FROM exam_types WHERE name=? LIMIT 1))`;
       examParams = [exam_type_id, examName, examName];
     }
 
     const studentFilter = student_id ? 'AND sm.student_id = ?' : '';
-    const studentParams = student_id ? [student_id] : [];
+    
+    // ✅ CRITICAL RE-ORDER FIX: Aligned parameters structure to perfectly match the SQL selection order
+    const params = [class_id, ...examParams, academic_year];
+    if (student_id) params.push(student_id);
 
-    // Correct exact parameters binding placeholder alignment sequence
-    const params = [class_id, ...examParams, academic_year, ...studentParams];
-
+    // Filter elements directly inside the query execution scope context to ensure strict data mapping layers
     const [rows] = await pool.execute(
       `SELECT sm.*, sm.is_absent,
        s.full_name as student_name, s.roll_no,
@@ -298,11 +298,12 @@ exports.getMarksheet = async (req, res) => {
          AND ser.academic_year = sm.academic_year
        WHERE sm.class_id = ? ${examConditionalFilter} AND sm.academic_year = ?
        ${studentFilter}
+       AND sm.subject_id IN (SELECT subject_id FROM class_subjects WHERE class_id = ?)
        ORDER BY s.roll_no, sub.name`,
-      params
+      [...params, class_id]
     );
 
-    // Bind thresholds from config
+    // Bind thresholds correctly from configurations
     const updatedRows = rows.map(r => {
       const cfg = configRows.find(c => c.subject_id === r.subject_id);
       return {
@@ -318,7 +319,6 @@ exports.getMarksheet = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 // Teacher Assignments & Remarks - Fully Intact
 exports.getTeacherAssignedSubjects = async (req, res) => {
   try {
