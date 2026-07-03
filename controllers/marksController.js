@@ -224,14 +224,13 @@ exports.saveMarks = async (req, res) => {
     res.json({ message: 'Marks saved successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
-
 exports.getMarksheet = async (req, res) => {
   try {
     const { exam_type_id, academic_year, student_id } = req.query;
     let { class_id } = req.query;
     const userRole = req.user.role;
 
-    // ✅ Resolve class_id from user profile for teachers safely
+    // Resolve class_id from user profile for teachers
     if (userRole === 'Teacher' || userRole === 'teacher') {
       const [empRows] = await pool.execute(
         'SELECT class_assigned FROM users WHERE id=?', [req.user.id]
@@ -243,39 +242,47 @@ exports.getMarksheet = async (req, res) => {
     if (!exam_type_id) return res.status(400).json({ message: 'exam_type_id is required' });
     if (!academic_year) return res.status(400).json({ message: 'academic_year is required' });
 
-    // ─── ADD-ON lookup: Resolve exact alphanumeric string value ───
+    // Resolve exam name from ID
     let examName = String(exam_type_id).trim();
-    if (!isNaN(parseInt(exam_type_id))) {
-      const [etRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [exam_type_id]);
+    let numericExamId = parseInt(exam_type_id);
+    if (!isNaN(numericExamId)) {
+      const [etRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [numericExamId]);
       if (etRows.length > 0) examName = etRows[0].name;
+    } else {
+      // exam_type_id is a name string — resolve its numeric ID
+      const [etRows] = await pool.execute('SELECT id FROM exam_types WHERE name=?', [examName]);
+      if (etRows.length > 0) numericExamId = etRows[0].id;
     }
 
     const isFinalCumulative = examName.toLowerCase().includes('final') || examName.toLowerCase().includes('annual');
 
-    // ─── ADD-ON: FETCH CONFIGURATIONS FOR THE SELECT CRITERIA ───
-    let configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`;
-    let configParams = [class_id, examName];
+    // Fetch exam subject config
+    let configQuery, configParams;
     if (isFinalCumulative) {
       configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ?`;
       configParams = [class_id];
+    } else {
+      configQuery = `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`;
+      configParams = [class_id, examName];
     }
     const [configRows] = await pool.execute(configQuery, configParams);
 
-    let studentFilter = '';
-    const params = [class_id];
-    if (student_id) { 
-      studentFilter = 'AND sm.student_id = ?'; 
-      params.push(student_id); 
-    }
-    params.push(academic_year);
-
-    // ─── CRITICAL SELECTION LAYER: FORCE MATCH THE RECORD VIA BOTH ID OR STRING NAME ───
-    let examConditionalFilter = `AND (sm.exam_type_id = ? OR sm.exam_type_id = ? OR sm.exam_type_id = (SELECT id FROM exam_types WHERE name=? LIMIT 1))`;
+    // Build query params in the CORRECT order matching the SQL placeholders
+    // SQL: WHERE sm.class_id = ? [examFilter] AND sm.academic_year = ? [studentFilter]
+    let examConditionalFilter, examParams;
     if (isFinalCumulative) {
       examConditionalFilter = `AND sm.exam_type_id IS NOT NULL`;
+      examParams = [];
     } else {
-      params.unshift(exam_type_id, examName, examName);
+      examConditionalFilter = `AND sm.exam_type_id = ?`;
+      examParams = [numericExamId];
     }
+
+    const studentFilter = student_id ? 'AND sm.student_id = ?' : '';
+    const studentParams = student_id ? [student_id] : [];
+
+    // Final params order: class_id, ...examParams, academic_year, ...studentParams
+    const params = [class_id, ...examParams, academic_year, ...studentParams];
 
     const [rows] = await pool.execute(
       `SELECT sm.*, sm.is_absent,
@@ -296,23 +303,22 @@ exports.getMarksheet = async (req, res) => {
       params
     );
 
-    // Bind thresholds dynamically from the exam configurations matrix layers
+    // Bind thresholds from config
     const updatedRows = rows.map(r => {
       const cfg = configRows.find(c => c.subject_id === r.subject_id);
       return {
         ...r,
-        max_marks: cfg ? cfg.max_marks : 100,
-        pass_marks: cfg ? cfg.pass_marks : 35
+        max_marks: cfg ? cfg.max_marks : (r.max_marks || 100),
+        pass_marks: cfg ? cfg.pass_marks : (r.pass_marks || 35)
       };
     });
 
     res.json(updatedRows);
-  } catch (err) { 
-    console.error('getMarksheet Error Trace:', err.message);
-    res.status(500).json({ message: err.message }); 
+  } catch (err) {
+    console.error('getMarksheet Error:', err.message);
+    res.status(500).json({ message: err.message });
   }
 };
-
 
 // Teacher Assignments & Remarks - Fully Intact
 exports.getTeacherAssignedSubjects = async (req, res) => {
