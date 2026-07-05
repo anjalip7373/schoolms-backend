@@ -12,64 +12,149 @@ exports.getDashboard = async (req, res) => {
     const { month, year, class_id } = req.query;
     const currentMonth = month || new Date().getMonth() + 1;
     const currentYear = year || new Date().getFullYear();
-    const monthStr = `${currentYear}-${String(currentMonth).padStart(2,'0')}`;
+    const monthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
     const userRole = req.user.role;
     const userId = req.user.id;
 
-    // Get teacher's assigned class — force it
     const teacherClass = await getTeacherClass(userId, userRole);
     const isTeacher = !!teacherClass;
-
-    // Teacher always sees only their class, others use selected class or all
     const effectiveClassId = isTeacher ? teacherClass : (class_id || null);
 
-    // Get classes — teacher sees only their class
-    const [allClasses] = await pool.execute(
-      'SELECT * FROM classes ORDER BY LENGTH(name), name'
+    const [allClasses] = await pool.execute('SELECT * FROM classes ORDER BY LENGTH(name), name');
+    const visibleClasses = isTeacher ? allClasses.filter(c => c.id == teacherClass) : allClasses;
+
+    // ── FEE STATS ──────────────────────────────────────────────────────────
+    // Count distinct students who paid at least once this month (not row count)
+    let classCond = effectiveClassId ? ' AND s.class_id = ?' : '';
+    let classParams = effectiveClassId ? [effectiveClassId] : [];
+
+    // Total active students
+    const [totalStudentsRes] = await pool.execute(
+      `SELECT COUNT(*) as cnt FROM students s WHERE s.is_active = 1${classCond}`,
+      classParams
     );
-    const visibleClasses = isTeacher
-      ? allClasses.filter(c => c.id == teacherClass)
-      : allClasses;
+    const totalStudents = totalStudentsRes[0].cnt;
 
-    // Fee stats — filtered by effectiveClassId
-    let feeQuery = `
-      SELECT COUNT(DISTINCT s.id) as total_students,
-      SUM(CASE WHEN fp.id IS NOT NULL THEN 1 ELSE 0 END) as paid_count
-      FROM students s 
-      LEFT JOIN fee_payments fp ON fp.student_id = s.id 
-        AND DATE_FORMAT(fp.payment_date,'%Y-%m') = ?
-      WHERE 1=1`;
-    const feeParams = [monthStr];
-    if (effectiveClassId) {
-      feeQuery += ' AND s.class_id = ?';
-      feeParams.push(effectiveClassId);
-    }
-    const [feeStats] = await pool.execute(feeQuery, feeParams);
+    // Students who paid at least one fee this month (DISTINCT to avoid double count)
+    const [paidRes] = await pool.execute(
+      `SELECT COUNT(DISTINCT fp.student_id) as cnt
+       FROM fee_payments fp
+       JOIN students s ON s.id = fp.student_id
+       WHERE DATE_FORMAT(fp.payment_date,'%Y-%m') = ? AND s.is_active = 1${classCond}`,
+      [monthStr, ...classParams]
+    );
+    const paidCount = paidRes[0].cnt;
+    const notPaidCount = totalStudents - paidCount;
 
-    // Salary stats — teachers don't see salary
-    let salaryStats = [{ total_employees: 0, generated_count: 0 }];
+    // ── FEE DETAIL LISTS ───────────────────────────────────────────────────
+    // Students who PAID this month
+    const [paidStudents] = await pool.execute(
+      `SELECT DISTINCT s.id, s.roll_no, s.full_name, c.name as class_name
+       FROM fee_payments fp
+       JOIN students s ON s.id = fp.student_id
+       JOIN classes c ON c.id = s.class_id
+       WHERE DATE_FORMAT(fp.payment_date,'%Y-%m') = ? AND s.is_active = 1${classCond}
+       ORDER BY s.roll_no`,
+      [monthStr, ...classParams]
+    );
+
+    // Students who have NOT paid this month
+    const [notPaidStudents] = await pool.execute(
+      `SELECT s.id, s.roll_no, s.full_name, c.name as class_name
+       FROM students s
+       JOIN classes c ON c.id = s.class_id
+       WHERE s.is_active = 1${classCond}
+       AND s.id NOT IN (
+         SELECT DISTINCT fp.student_id FROM fee_payments fp
+         WHERE DATE_FORMAT(fp.payment_date,'%Y-%m') = ?
+       )
+       ORDER BY s.roll_no`,
+      [...classParams, monthStr]
+    );
+
+    // All active students list
+    const [allStudentsList] = await pool.execute(
+      `SELECT s.id, s.roll_no, s.full_name, c.name as class_name
+       FROM students s
+       JOIN classes c ON c.id = s.class_id
+       WHERE s.is_active = 1${classCond}
+       ORDER BY s.roll_no`,
+      classParams
+    );
+
+    // ── SALARY STATS ───────────────────────────────────────────────────────
+    let salaryTotal = 0, salaryGenerated = 0;
+    let salaryGeneratedList = [], salaryNotGeneratedList = [], allEmployeesList = [];
+
     if (!isTeacher) {
-      [salaryStats] = await pool.execute(
+      const [salaryRes] = await pool.execute(
         `SELECT COUNT(DISTINCT u.id) as total_employees,
          SUM(CASE WHEN ss.id IS NOT NULL THEN 1 ELSE 0 END) as generated_count
-         FROM users u 
+         FROM users u
          LEFT JOIN salary_slips ss ON ss.employee_id = u.id AND ss.month = ?
          WHERE u.is_active = 1`,
         [monthStr]
       );
+      salaryTotal = salaryRes[0].total_employees;
+      salaryGenerated = salaryRes[0].generated_count || 0;
+
+      // Employees WITH salary slip this month
+      const [genRes] = await pool.execute(
+        `SELECT u.id, u.emp_id, u.full_name, r.name as role_name
+         FROM salary_slips ss
+         JOIN users u ON u.id = ss.employee_id
+         LEFT JOIN roles r ON r.id = u.role_id
+         WHERE ss.month = ? AND u.is_active = 1
+         ORDER BY u.full_name`,
+        [monthStr]
+      );
+      salaryGeneratedList = genRes;
+
+      // Employees WITHOUT salary slip this month
+      const [notGenRes] = await pool.execute(
+        `SELECT u.id, u.emp_id, u.full_name, r.name as role_name
+         FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+         WHERE u.is_active = 1
+         AND u.id NOT IN (
+           SELECT DISTINCT ss.employee_id FROM salary_slips ss WHERE ss.month = ?
+         )
+         ORDER BY u.full_name`,
+        [monthStr]
+      );
+      salaryNotGeneratedList = notGenRes;
+
+      // All active employees
+      const [allEmpRes] = await pool.execute(
+        `SELECT u.id, u.emp_id, u.full_name, r.name as role_name
+         FROM users u
+         LEFT JOIN roles r ON r.id = u.role_id
+         WHERE u.is_active = 1
+         ORDER BY u.full_name`,
+        []
+      );
+      allEmployeesList = allEmpRes;
     }
 
     res.json({
       classes: visibleClasses,
       fees: {
-        total: feeStats[0].total_students,
-        paid: feeStats[0].paid_count || 0,
-        not_paid: (feeStats[0].total_students - (feeStats[0].paid_count || 0))
+        total: totalStudents,
+        paid: paidCount,
+        not_paid: notPaidCount,
+        // Detail lists for modals
+        paid_students: paidStudents,
+        not_paid_students: notPaidStudents,
+        all_students: allStudentsList,
       },
       salary: {
-        total: salaryStats[0].total_employees,
-        generated: salaryStats[0].generated_count || 0,
-        not_generated: (salaryStats[0].total_employees - (salaryStats[0].generated_count || 0))
+        total: salaryTotal,
+        generated: salaryGenerated,
+        not_generated: salaryTotal - salaryGenerated,
+        // Detail lists for modals
+        generated_list: salaryGeneratedList,
+        not_generated_list: salaryNotGeneratedList,
+        all_employees: allEmployeesList,
       },
       month: currentMonth,
       year: currentYear,
@@ -77,6 +162,7 @@ exports.getDashboard = async (req, res) => {
       teacherClassId: teacherClass
     });
   } catch (err) {
+    console.error('Dashboard error:', err.message);
     res.status(500).json({ message: err.message });
   }
 };
