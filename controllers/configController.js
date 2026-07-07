@@ -60,7 +60,25 @@ exports.updateClass = async (req, res) => {
 
 exports.deleteClass = async (req, res) => {
   try {
-    await pool.execute('DELETE FROM classes WHERE id=?', [req.params.id]);
+    const classId = req.params.id;
+
+    // Block deletion if any students are still assigned to this class
+    const [students] = await pool.execute('SELECT COUNT(*) as count FROM students WHERE class_id = ?', [classId]);
+    if (students[0].count > 0) {
+      return res.status(400).json({
+        message: `Cannot delete this class — ${students[0].count} student(s) are still assigned to it. Please reassign or remove them first.`
+      });
+    }
+
+    // Block deletion if any teacher is still assigned to this class
+    const [teachers] = await pool.execute('SELECT COUNT(*) as count FROM users WHERE class_assigned = ?', [classId]);
+    if (teachers[0].count > 0) {
+      return res.status(400).json({
+        message: `Cannot delete this class — a teacher is still assigned to it. Please reassign the teacher first.`
+      });
+    }
+
+    await pool.execute('DELETE FROM classes WHERE id=?', [classId]);
     res.json({ message: 'Class deleted' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
