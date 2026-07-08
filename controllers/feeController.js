@@ -194,10 +194,15 @@ exports.getFeeAudit = async (req, res) => {
       return res.status(403).json({ message: 'Only Admin can view the fee audit report.' });
     }
 
-    const { academic_year } = req.query; // e.g. "2026-2027" (April 2026 – March 2027)
+    const { academic_year, from_month, from_year, to_month, to_year } = req.query;
 
     let fromDate, toDate;
-    if (academic_year && academic_year.includes('-')) {
+    if (from_month && from_year && to_month && to_year) {
+      // Custom range takes priority when provided
+      fromDate = `${from_year}-${String(from_month).padStart(2, '0')}-01`;
+      const lastDay = new Date(parseInt(to_year), parseInt(to_month), 0).getDate();
+      toDate = `${to_year}-${String(to_month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    } else if (academic_year && academic_year.includes('-')) {
       const [y1, y2] = academic_year.split('-');
       fromDate = `${y1}-04-01`;
       toDate = `${y2}-03-31`;
