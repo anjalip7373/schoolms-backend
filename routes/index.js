@@ -50,6 +50,7 @@ router.get('/fees/all-students-status', authenticateToken, safeCall(feeControlle
 router.get('/fees/dashboard-stats', authenticateToken, safeCall(feeController.getDashboardFeeStats));
 router.post('/fees', authenticateToken, safeCall(feeController.createFeePayment));
 router.get('/fees/receipt/:id', authenticateToken, safeCall(feeController.getReceiptById));
+router.get('/fees/audit', authenticateToken, requireRole('admin'), safeCall(feeController.getFeeAudit));
 
 // Salary
 router.get('/salary', authenticateToken, safeCall(salaryController.getSalarySlips));
