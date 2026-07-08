@@ -26,7 +26,7 @@ exports.getAttendance = async (req, res) => {
         LEFT JOIN attendance a ON a.person_id = s.id 
           AND a.person_type = 'student' 
           AND a.attendance_date = ?
-        WHERE 1=1`;
+        WHERE s.fee_status = 'active'`;
       const params = [attendanceDate];
       if (effectiveClassId) { query += ' AND s.class_id = ?'; params.push(effectiveClassId); }
       query += ' ORDER BY c.name, s.roll_no';
@@ -209,7 +209,7 @@ exports.getAttendanceReport = async (req, res) => {
           AND a.person_type = 'student'
           AND a.attendance_date >= ?
           AND a.attendance_date <= ?
-        WHERE 1=1`;
+        WHERE s.fee_status = 'active'`;
 
       const params = [fromDate, toDate];
       if (effectiveClassId) {
@@ -282,7 +282,8 @@ exports.getDailyReport = async (req, res) => {
              INNER JOIN users u ON a.person_id = u.id
              LEFT JOIN roles r ON u.role_id = r.id
              WHERE a.person_type = 'employee'
-             AND a.attendance_date >= ? AND a.attendance_date <= ?`;
+             AND a.attendance_date >= ? AND a.attendance_date <= ?
+             AND u.is_active = 1`;
       params = [firstDay, lastDay];
       if (req.user.role === 'principal') {
         sql += ` AND r.name NOT IN ('admin','principal')`;
@@ -292,7 +293,8 @@ exports.getDailyReport = async (req, res) => {
              FROM attendance a
              INNER JOIN students s ON a.person_id = s.id
              WHERE a.person_type = 'student'
-             AND a.attendance_date >= ? AND a.attendance_date <= ?`;
+             AND a.attendance_date >= ? AND a.attendance_date <= ?
+             AND s.fee_status = 'active'`;
       params = [firstDay, lastDay];
       if (effectiveClassId) {
         sql += ` AND s.class_id = ?`;

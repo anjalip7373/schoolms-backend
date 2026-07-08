@@ -46,6 +46,13 @@ exports.getSalarySlips = async (req, res) => {
 exports.generateSalarySlip = async (req, res) => {
   try {
     const { employee_id, month, year, basic_salary, deductions, remarks } = req.body;
+
+    // Guard: deactivated employees cannot have salary slips generated
+    const [empCheck] = await pool.execute('SELECT is_active, full_name FROM users WHERE id = ?', [employee_id]);
+    if (!empCheck.length) return res.status(404).json({ message: 'Employee not found' });
+    if (!empCheck[0].is_active) {
+      return res.status(403).json({ message: `${empCheck[0].full_name} is deactivated and cannot receive a salary slip` });
+    }
     
     // Check if principal trying to generate for admin/principal
     if (req.user.role === 'principal') {

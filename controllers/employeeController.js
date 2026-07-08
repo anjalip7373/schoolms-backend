@@ -68,6 +68,13 @@ exports.updateEmployee = async (req, res) => {
     const { id } = req.params;
     const { full_name, phone, email, qualification, subject, salary, joining_date, class_assigned } = req.body;
 
+    // Guard: deactivated employees cannot be edited (use the reactivate button first)
+    const [activeCheck] = await pool.execute('SELECT is_active, full_name FROM users WHERE id = ?', [id]);
+    if (!activeCheck.length) return res.status(404).json({ message: 'Employee not found' });
+    if (!activeCheck[0].is_active) {
+      return res.status(403).json({ message: `${activeCheck[0].full_name} is deactivated and cannot be edited. Reactivate first.` });
+    }
+
     await pool.execute(
       `UPDATE users SET full_name=?, phone=?, email=?, qualification=?, subject=?, salary=?, joining_date=?, class_assigned=? WHERE id=?`,
       [full_name, phone, email || null, qualification, subject, salary, joining_date, class_assigned, id]

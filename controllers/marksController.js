@@ -128,7 +128,7 @@ exports.getMarks = async (req, res) => {
     }
 
     const [students] = await pool.execute(
-      `SELECT s.id, s.roll_no, s.full_name FROM students s WHERE s.class_id = ? AND s.is_active = 1 ORDER BY s.roll_no`,
+      `SELECT s.id, s.roll_no, s.full_name FROM students s WHERE s.class_id = ? AND s.is_active = 1 AND s.fee_status = 'active' ORDER BY s.roll_no`,
       [effectiveClassId]
     );
 
@@ -304,6 +304,7 @@ exports.getMarksheet = async (req, res) => {
        WHERE sm.class_id = ? ${examConditionalFilter} AND sm.academic_year = ?
        ${studentFilter}
        AND sm.subject_id IN (SELECT subject_id FROM class_subjects WHERE class_id = ?)
+       AND s.fee_status = 'active'
        ORDER BY s.roll_no, sub.name`,
       [...params, class_id]
     );
