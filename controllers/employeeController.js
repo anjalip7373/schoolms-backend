@@ -33,6 +33,20 @@ exports.getAllEmployees = async (req, res) => {
 exports.addEmployee = async (req, res) => {
   try {
     const { full_name, role_id, login_user_id, login_password, phone, email, qualification, subject, salary, joining_date, class_assigned } = req.body;
+
+    // Guard: no duplicate employee (same name + phone), across active AND deactivated records
+    const [dupRows] = await pool.execute(
+      `SELECT id, is_active FROM users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(?)) AND phone = ?`,
+      [full_name, phone]
+    );
+    if (dupRows.length) {
+      const existing = dupRows[0];
+      if (!existing.is_active) {
+        return res.status(409).json({ message: `${full_name} already exists (deactivated) — reactivate instead of adding a new record.` });
+      }
+      return res.status(409).json({ message: `${full_name} already exists as an active employee with the same phone number.` });
+    }
+
     const emp_id = await generateEmpId();
     const hashedPass = await bcrypt.hash(login_password, 10);
     const classVal = class_assigned && class_assigned !== '' ? class_assigned : null;

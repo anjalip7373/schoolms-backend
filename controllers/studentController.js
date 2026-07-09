@@ -34,6 +34,20 @@ exports.getAllStudents = async (req, res) => {
 exports.addStudent = async (req, res) => {
   try {
     const { full_name, class_id, phone, whatsapp_no, email, date_of_birth, address } = req.body;
+
+    // Guard: no duplicate student (same name + date of birth), across active AND deactivated records
+    const [dupRows] = await pool.execute(
+      `SELECT id, fee_status FROM students WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(?)) AND date_of_birth = ?`,
+      [full_name, date_of_birth]
+    );
+    if (dupRows.length) {
+      const existing = dupRows[0];
+      if (existing.fee_status === 'inactive') {
+        return res.status(409).json({ message: `${full_name} already exists (deactivated) — reactivate instead of adding a new record.` });
+      }
+      return res.status(409).json({ message: `${full_name} already exists as an active student with the same date of birth.` });
+    }
+
     const teacherClass = await getTeacherClass(req.user.id, req.user.role);
     const finalClassId = teacherClass || class_id;
 
