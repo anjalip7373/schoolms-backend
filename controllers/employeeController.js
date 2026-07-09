@@ -32,19 +32,19 @@ exports.getAllEmployees = async (req, res) => {
 
 exports.addEmployee = async (req, res) => {
   try {
-    const { full_name, role_id, login_user_id, login_password, phone, email, qualification, subject, salary, joining_date, class_assigned } = req.body;
+    const { full_name, role_id, login_user_id, login_password, phone, email, date_of_birth, qualification, subject, salary, joining_date, class_assigned } = req.body;
 
-    // Guard: no duplicate employee (same name + phone), across active AND deactivated records
+    // Guard: no duplicate employee (same name + date of birth + phone), across active AND deactivated records
     const [dupRows] = await pool.execute(
-      `SELECT id, is_active FROM users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(?)) AND phone = ?`,
-      [full_name, phone]
+      `SELECT id, is_active FROM users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(?)) AND date_of_birth = ? AND phone = ?`,
+      [full_name, date_of_birth, phone]
     );
     if (dupRows.length) {
       const existing = dupRows[0];
       if (!existing.is_active) {
         return res.status(409).json({ message: `${full_name} already exists (deactivated) — reactivate instead of adding a new record.` });
       }
-      return res.status(409).json({ message: `${full_name} already exists as an active employee with the same phone number.` });
+      return res.status(409).json({ message: `${full_name} already exists as an active employee with the same date of birth and phone number.` });
     }
 
     const emp_id = await generateEmpId();
@@ -53,9 +53,9 @@ exports.addEmployee = async (req, res) => {
     const subjectVal = subject && subject !== '' ? subject : null;
 
     const [result] = await pool.execute(
-      `INSERT INTO users (emp_id, full_name, role_id, login_user_id, login_password, phone, email, qualification, subject, salary, joining_date, class_assigned)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [emp_id, full_name, role_id, login_user_id, hashedPass, phone, email || null, qualification, subjectVal, salary, joining_date, classVal]
+      `INSERT INTO users (emp_id, full_name, role_id, login_user_id, login_password, phone, email, date_of_birth, qualification, subject, salary, joining_date, class_assigned)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [emp_id, full_name, role_id, login_user_id, hashedPass, phone, email || null, date_of_birth || null, qualification, subjectVal, salary, joining_date, classVal]
     );
 
     // Get role name for notification
@@ -80,7 +80,7 @@ if (phone) {
 exports.updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const { full_name, phone, email, qualification, subject, salary, joining_date, class_assigned } = req.body;
+    const { full_name, phone, email, date_of_birth, qualification, subject, salary, joining_date, class_assigned } = req.body;
 
     // Guard: deactivated employees cannot be edited (use the reactivate button first)
     const [activeCheck] = await pool.execute('SELECT is_active, full_name FROM users WHERE id = ?', [id]);
@@ -90,8 +90,8 @@ exports.updateEmployee = async (req, res) => {
     }
 
     await pool.execute(
-      `UPDATE users SET full_name=?, phone=?, email=?, qualification=?, subject=?, salary=?, joining_date=?, class_assigned=? WHERE id=?`,
-      [full_name, phone, email || null, qualification, subject, salary, joining_date, class_assigned, id]
+      `UPDATE users SET full_name=?, phone=?, email=?, date_of_birth=?, qualification=?, subject=?, salary=?, joining_date=?, class_assigned=? WHERE id=?`,
+      [full_name, phone, email || null, date_of_birth || null, qualification, subject, salary, joining_date, class_assigned, id]
     );
 
     // ✅ Send update email
