@@ -107,7 +107,17 @@ exports.updateFeeType = async (req, res) => {
 
 exports.deleteFeeType = async (req, res) => {
   try {
-    await pool.execute('DELETE FROM fee_types WHERE id=?', [req.params.id]);
+    const feeTypeId = req.params.id;
+
+    // Block deletion if any fee payments already reference this fee type
+    const [payments] = await pool.execute('SELECT COUNT(*) as count FROM fee_payments WHERE fee_type_id = ?', [feeTypeId]);
+    if (payments[0].count > 0) {
+      return res.status(400).json({
+        message: `Cannot delete this fee type — ${payments[0].count} payment record(s) already reference it. Payment history must be preserved.`
+      });
+    }
+
+    await pool.execute('DELETE FROM fee_types WHERE id=?', [feeTypeId]);
     res.json({ message: 'Fee type deleted' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
@@ -145,7 +155,17 @@ exports.updateRole = async (req, res) => {
 
 exports.deleteRole = async (req, res) => {
   try {
-    await pool.execute('DELETE FROM roles WHERE id=?', [req.params.id]);
+    const roleId = req.params.id;
+
+    // Block deletion if any user still has this role assigned
+    const [usersWithRole] = await pool.execute('SELECT COUNT(*) as count FROM users WHERE role_id = ?', [roleId]);
+    if (usersWithRole[0].count > 0) {
+      return res.status(400).json({
+        message: `Cannot delete this role — ${usersWithRole[0].count} user(s) are still assigned to it. Please reassign them first.`
+      });
+    }
+
+    await pool.execute('DELETE FROM roles WHERE id=?', [roleId]);
     res.json({ message: 'Role deleted' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
