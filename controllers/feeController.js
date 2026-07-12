@@ -307,6 +307,7 @@ exports.getAllStudentsWithFeeStatus = async (req, res) => {
         s.roll_no, 
         s.full_name, 
         c.name as class_name,
+        s.fee_status as student_status,
         COALESCE(SUM(fp.amount), 0) as paid_amount,
         COUNT(fp.id) as payment_count,
         GROUP_CONCAT(DISTINCT ft.name ORDER BY fp.payment_date SEPARATOR ', ') as fee_types_paid,
@@ -320,7 +321,7 @@ exports.getAllStudentsWithFeeStatus = async (req, res) => {
         AND DATE(fp.payment_date) >= ?
         AND DATE(fp.payment_date) <= ?
       LEFT JOIN fee_types ft ON fp.fee_type_id = ft.id
-      WHERE s.fee_status = 'active'`;
+      WHERE 1=1`;
 
     const params = [fromDate, toDate];
 

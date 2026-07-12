@@ -20,13 +20,13 @@ exports.getAttendance = async (req, res) => {
     if (person_type === 'student' || !person_type) {
       let query = `
         SELECT s.id, s.full_name, s.roll_no as identifier, c.name as class_name, 'student' as person_type,
-        COALESCE(a.status, 'absent') as status
+        s.fee_status, COALESCE(a.status, 'absent') as status
         FROM students s 
         LEFT JOIN classes c ON s.class_id = c.id
         LEFT JOIN attendance a ON a.person_id = s.id 
           AND a.person_type = 'student' 
           AND a.attendance_date = ?
-        WHERE s.fee_status = 'active'`;
+        WHERE 1=1`;
       const params = [attendanceDate];
       if (effectiveClassId) { query += ' AND s.class_id = ?'; params.push(effectiveClassId); }
       query += ' ORDER BY c.name, s.roll_no';
@@ -40,12 +40,12 @@ exports.getAttendance = async (req, res) => {
       const userRole = req.user.role;
       let empQuery = `
         SELECT u.id, u.full_name, u.emp_id as identifier, r.name as class_name, 'employee' as person_type,
-        COALESCE(a.status, 'absent') as status
+        u.is_active, COALESCE(a.status, 'absent') as status
         FROM users u LEFT JOIN roles r ON u.role_id = r.id
         LEFT JOIN attendance a ON a.person_id = u.id 
           AND a.person_type = 'employee' 
           AND a.attendance_date = ?
-        WHERE u.is_active = 1`;
+        WHERE 1=1`;
 
       const empParams = [attendanceDate];
 
@@ -73,7 +73,31 @@ exports.saveAttendance = async (req, res) => {
       return res.status(400).json({ message: 'Can only edit today\'s attendance' });
     }
 
+    // Deactivated students/employees stay visible in the attendance list (for roster completeness),
+    // but marking them is silently skipped here — no error, no popup, the rest of the class/staff saves fine.
+    const studentIds = records.filter(r => r.person_type === 'student').map(r => r.person_id);
+    const employeeIds = records.filter(r => r.person_type === 'employee').map(r => r.person_id);
+
+    let activeStudentIds = new Set();
+    if (studentIds.length) {
+      const placeholders = studentIds.map(() => '?').join(',');
+      const [rows] = await pool.execute(`SELECT id FROM students WHERE id IN (${placeholders}) AND fee_status = 'active'`, studentIds);
+      activeStudentIds = new Set(rows.map(r => r.id));
+    }
+
+    let activeEmployeeIds = new Set();
+    if (employeeIds.length) {
+      const placeholders = employeeIds.map(() => '?').join(',');
+      const [rows] = await pool.execute(`SELECT id FROM users WHERE id IN (${placeholders}) AND is_active = 1`, employeeIds);
+      activeEmployeeIds = new Set(rows.map(r => r.id));
+    }
+
     for (const rec of records) {
+      const isActivePerson = rec.person_type === 'student'
+        ? activeStudentIds.has(rec.person_id)
+        : activeEmployeeIds.has(rec.person_id);
+      if (!isActivePerson) continue; // deactivated — no record written, no notification sent
+
       await pool.execute(
         `INSERT INTO attendance (person_type, person_id, attendance_date, status, marked_by)
          VALUES (?,?,?,?,?) ON DUPLICATE KEY UPDATE status=?, marked_by=?`,
@@ -196,7 +220,7 @@ exports.getAttendanceReport = async (req, res) => {
 
     if (person_type === 'student' || !person_type) {
       let query = `
-        SELECT s.id, s.roll_no, s.full_name, c.name as class_name,
+        SELECT s.id, s.roll_no, s.full_name, c.name as class_name, s.fee_status,
         COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_days,
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
@@ -209,7 +233,7 @@ exports.getAttendanceReport = async (req, res) => {
           AND a.person_type = 'student'
           AND a.attendance_date >= ?
           AND a.attendance_date <= ?
-        WHERE s.fee_status = 'active'`;
+        WHERE 1=1`;
 
       const params = [fromDate, toDate];
       if (effectiveClassId) {
@@ -227,7 +251,7 @@ exports.getAttendanceReport = async (req, res) => {
       const userRole = req.user.role;
 
       let empQuery = `
-        SELECT u.id, u.emp_id as roll_no, u.full_name, r.name as class_name,
+        SELECT u.id, u.emp_id as roll_no, u.full_name, r.name as class_name, u.is_active,
         COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_days,
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
@@ -239,7 +263,7 @@ exports.getAttendanceReport = async (req, res) => {
           AND a.person_type = 'employee'
           AND a.attendance_date >= ?
           AND a.attendance_date <= ?
-        WHERE u.is_active = 1`;
+        WHERE 1=1`;
 
       const empParams = [fromDate, toDate];
 
@@ -282,8 +306,7 @@ exports.getDailyReport = async (req, res) => {
              INNER JOIN users u ON a.person_id = u.id
              LEFT JOIN roles r ON u.role_id = r.id
              WHERE a.person_type = 'employee'
-             AND a.attendance_date >= ? AND a.attendance_date <= ?
-             AND u.is_active = 1`;
+             AND a.attendance_date >= ? AND a.attendance_date <= ?`;
       params = [firstDay, lastDay];
       if (req.user.role === 'principal') {
         sql += ` AND r.name NOT IN ('admin','principal')`;
@@ -293,8 +316,7 @@ exports.getDailyReport = async (req, res) => {
              FROM attendance a
              INNER JOIN students s ON a.person_id = s.id
              WHERE a.person_type = 'student'
-             AND a.attendance_date >= ? AND a.attendance_date <= ?
-             AND s.fee_status = 'active'`;
+             AND a.attendance_date >= ? AND a.attendance_date <= ?`;
       params = [firstDay, lastDay];
       if (effectiveClassId) {
         sql += ` AND s.class_id = ?`;

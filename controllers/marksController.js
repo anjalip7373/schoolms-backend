@@ -128,7 +128,7 @@ exports.getMarks = async (req, res) => {
     }
 
     const [students] = await pool.execute(
-      `SELECT s.id, s.roll_no, s.full_name FROM students s WHERE s.class_id = ? AND s.is_active = 1 AND s.fee_status = 'active' ORDER BY s.roll_no`,
+      `SELECT s.id, s.roll_no, s.full_name, s.fee_status FROM students s WHERE s.class_id = ? AND s.is_active = 1 ORDER BY s.roll_no`,
       [effectiveClassId]
     );
 
@@ -201,8 +201,22 @@ exports.saveMarks = async (req, res) => {
 
     const targetExamIdValue = numericExamId || exam_type_id;
 
+    // Deactivated students are visible in the Marks Entry list (for roster completeness) but
+    // their marks are silently skipped on save — no error, no popup, the rest of the class saves fine.
+    const markStudentIds = [...new Set(marks.map(m => m.student_id))];
+    let activeStudentIds = new Set();
+    if (markStudentIds.length) {
+      const placeholders = markStudentIds.map(() => '?').join(',');
+      const [activeRows] = await pool.execute(
+        `SELECT id FROM students WHERE id IN (${placeholders}) AND fee_status = 'active'`,
+        markStudentIds
+      );
+      activeStudentIds = new Set(activeRows.map(r => r.id));
+    }
+
     for (const mark of marks) {
       const { student_id, subject_id, marks_obtained, is_absent } = mark;
+      if (!activeStudentIds.has(student_id)) continue;
       const cfg = configRows.find(c => c.subject_id === subject_id);
       const maxMarks = cfg ? cfg.max_marks : 100;
 
@@ -293,7 +307,7 @@ exports.getMarksheet = async (req, res) => {
     // hardcoded the same '${examName}' string onto every row, which broke per-exam config matching.
     const [rows] = await pool.execute(
       `SELECT sm.*,
-       s.full_name as student_name, s.roll_no,
+       s.full_name as student_name, s.roll_no, s.fee_status as student_fee_status,
        sub.name as subject_name, sub.code,
        et.name as exam_type_name, c.name as class_name
        FROM student_marks sm
@@ -304,7 +318,6 @@ exports.getMarksheet = async (req, res) => {
        WHERE sm.class_id = ? ${examConditionalFilter} AND sm.academic_year = ?
        ${studentFilter}
        AND sm.subject_id IN (SELECT subject_id FROM class_subjects WHERE class_id = ?)
-       AND s.fee_status = 'active'
        ORDER BY s.roll_no, sub.name`,
       [...params, class_id]
     );

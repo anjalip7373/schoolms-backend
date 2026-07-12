@@ -154,12 +154,11 @@ exports.getDashboardSalaryStats = async (req, res) => {
     }
 
     const [rows] = await pool.execute(
-      `SELECT u.id, u.full_name, u.emp_id, r.name as role_name,
+      `SELECT u.id, u.full_name, u.emp_id, r.name as role_name, u.is_active,
        ss.id as slip_id, ss.status, ss.net_salary
        FROM users u 
        LEFT JOIN roles r ON u.role_id = r.id
        LEFT JOIN salary_slips ss ON ss.employee_id = u.id AND ss.month = ?
-       WHERE u.is_active = 1 
        ORDER BY u.full_name`,
       [monthStr]
     );
@@ -195,7 +194,7 @@ exports.getAllEmployeesWithSalaryStatus = async (req, res) => {
 
     let query = `
       SELECT 
-        u.id, u.emp_id, u.full_name, r.name as role_name,
+        u.id, u.emp_id, u.full_name, r.name as role_name, u.is_active,
         ss.id as slip_id, ss.slip_no, ss.month as salary_month,
         ss.basic_salary, ss.deductions, ss.net_salary,
         CASE WHEN ss.id IS NOT NULL THEN ss.status ELSE 'not_generated' END as payment_status
@@ -205,7 +204,7 @@ exports.getAllEmployeesWithSalaryStatus = async (req, res) => {
         ON ss.employee_id = u.id
         AND ss.month >= ?
         AND ss.month <= ?
-      WHERE u.is_active = 1`;
+      WHERE 1=1`;
 
     const params = [fromStr, toStr];
 
