@@ -32,7 +32,7 @@ exports.sendBroadcast = async (req, res) => {
     if (target_type === 'all') {
       // All students + all employees
       const [students] = await pool.execute(
-        `SELECT s.full_name, s.email, 'student' as type FROM students s WHERE s.is_active = 1 AND s.email IS NOT NULL AND s.email != ''`
+        `SELECT s.full_name, s.email, 'student' as type FROM students s WHERE s.fee_status = 'active' AND s.email IS NOT NULL AND s.email != ''`
       );
       const [employees] = await pool.execute(
         `SELECT u.full_name, u.email, 'employee' as type FROM users u WHERE u.is_active = 1 AND u.email IS NOT NULL AND u.email != ''`
@@ -43,7 +43,7 @@ exports.sendBroadcast = async (req, res) => {
       // All students in a class
       const [students] = await pool.execute(
         `SELECT s.full_name, s.email, 'student' as type FROM students s 
-         WHERE s.class_id = ? AND s.is_active = 1 AND s.email IS NOT NULL AND s.email != ''`,
+         WHERE s.class_id = ? AND s.fee_status = 'active' AND s.email IS NOT NULL AND s.email != ''`,
         [target_class_id]
       );
       recipients = students;
@@ -51,7 +51,7 @@ exports.sendBroadcast = async (req, res) => {
     } else if (target_type === 'students') {
       // All students
       const [students] = await pool.execute(
-        `SELECT s.full_name, s.email, 'student' as type FROM students s WHERE s.is_active = 1 AND s.email IS NOT NULL AND s.email != ''`
+        `SELECT s.full_name, s.email, 'student' as type FROM students s WHERE s.fee_status = 'active' AND s.email IS NOT NULL AND s.email != ''`
       );
       recipients = students;
 
@@ -145,7 +145,7 @@ exports.sendWhatsAppBroadcast = async (req, res) => {
     if (target_type === 'all') {
       const [students] = await pool.execute(
         `SELECT s.full_name, s.email, s.phone, s.whatsapp_no, 'student' as type 
-         FROM students s WHERE s.is_active = 1`
+         FROM students s WHERE s.fee_status = 'active'`
       );
       const [employees] = await pool.execute(
         `SELECT u.full_name, u.email, u.phone, NULL as whatsapp_no, 'employee' as type 
@@ -156,7 +156,7 @@ exports.sendWhatsAppBroadcast = async (req, res) => {
     } else if (target_type === 'class') {
       const [students] = await pool.execute(
         `SELECT s.full_name, s.email, s.phone, s.whatsapp_no, 'student' as type 
-         FROM students s WHERE s.class_id = ? AND s.is_active = 1`,
+         FROM students s WHERE s.class_id = ? AND s.fee_status = 'active'`,
         [target_class_id]
       );
       recipients = students;
@@ -164,7 +164,7 @@ exports.sendWhatsAppBroadcast = async (req, res) => {
     } else if (target_type === 'students') {
       const [students] = await pool.execute(
         `SELECT s.full_name, s.email, s.phone, s.whatsapp_no, 'student' as type 
-         FROM students s WHERE s.is_active = 1`
+         FROM students s WHERE s.fee_status = 'active'`
       );
       recipients = students;
 
