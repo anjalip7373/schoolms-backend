@@ -89,7 +89,7 @@ exports.getDashboard = async (req, res) => {
     if (!isTeacher) {
       const [salaryRes] = await pool.execute(
         `SELECT COUNT(DISTINCT u.id) as total_employees,
-         SUM(CASE WHEN ss.id IS NOT NULL THEN 1 ELSE 0 END) as generated_count
+         COUNT(DISTINCT CASE WHEN ss.id IS NOT NULL THEN u.id END) as generated_count
          FROM users u
          LEFT JOIN salary_slips ss ON ss.employee_id = u.id AND ss.month = ?
          WHERE u.is_active = 1`,
@@ -98,9 +98,10 @@ exports.getDashboard = async (req, res) => {
       salaryTotal = salaryRes[0].total_employees;
       salaryGenerated = salaryRes[0].generated_count || 0;
 
-      // Employees WITH salary slip this month
+      // Employees WITH salary slip this month (DISTINCT so employees with
+      // multiple slip rows in the same month don't appear/count more than once)
       const [genRes] = await pool.execute(
-        `SELECT u.id, u.emp_id, u.full_name, r.name as role_name
+        `SELECT DISTINCT u.id, u.emp_id, u.full_name, r.name as role_name
          FROM salary_slips ss
          JOIN users u ON u.id = ss.employee_id
          LEFT JOIN roles r ON r.id = u.role_id
