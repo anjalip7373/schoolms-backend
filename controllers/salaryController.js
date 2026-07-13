@@ -194,7 +194,7 @@ exports.getAllEmployeesWithSalaryStatus = async (req, res) => {
 
     let query = `
       SELECT 
-        u.id, u.emp_id, u.full_name, r.name as role_name, u.is_active,
+        u.id, u.emp_id, u.full_name, r.name as role_name, u.is_active, u.deactivated_date,
         ss.id as slip_id, ss.slip_no, ss.month as salary_month,
         ss.basic_salary, ss.deductions, ss.net_salary,
         CASE WHEN ss.id IS NOT NULL THEN ss.status ELSE 'not_generated' END as payment_status

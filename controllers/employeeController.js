@@ -130,7 +130,12 @@ exports.toggleEmployeeStatus = async (req, res) => {
     if (!rows.length) return res.status(404).json({ message: 'Employee not found' });
     if (rows[0].login_user_id === 'admin') return res.status(403).json({ message: 'Cannot deactivate admin' });
     const newStatus = rows[0].is_active ? 0 : 1;
-    await pool.execute('UPDATE users SET is_active = ? WHERE id = ?', [newStatus, id]);
+
+    await pool.execute(
+      'UPDATE users SET is_active = ?, deactivated_date = ? WHERE id = ?',
+      [newStatus, newStatus ? null : new Date().toISOString().split('T')[0], id]
+    );
+
     res.json({ message: newStatus ? 'Employee activated' : 'Employee deactivated' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };

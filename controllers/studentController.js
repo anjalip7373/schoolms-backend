@@ -85,31 +85,29 @@ exports.updateStudent = async (req, res) => {
     const { id } = req.params;
     const { full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, fee_status } = req.body;
 
-    // Guard: deactivated students cannot be edited — EXCEPT the reactivation call itself,
-    // which reuses this same endpoint and sends fee_status: 'active' to flip them back on.
-    const [activeCheck] = await pool.execute('SELECT fee_status, full_name FROM students WHERE id = ?', [id]);
+    const [activeCheck] = await pool.execute('SELECT fee_status, deactivated_date, full_name FROM students WHERE id = ?', [id]);
     if (!activeCheck.length) return res.status(404).json({ message: 'Student not found' });
-    if (activeCheck[0].fee_status !== 'active' && fee_status !== 'active') {
+    const previousStatus = activeCheck[0].fee_status;
+    if (previousStatus !== 'active' && fee_status !== 'active') {
       return res.status(403).json({ message: `${activeCheck[0].full_name} is deactivated and cannot be edited. Reactivate first.` });
     }
 
+    // Stamp/clear deactivated_date based on the transition
+    let deactivatedDate = null; // keep NULL if staying/becoming active
+    if (fee_status !== 'active') {
+      deactivatedDate = previousStatus === 'active'
+        ? new Date().toISOString().split('T')[0] // just turned inactive today
+        : activeCheck[0].deactivated_date;        // already inactive, keep existing date
+    }
+
     await pool.execute(
-      `UPDATE students SET full_name=?, class_id=?, phone=?, whatsapp_no=?, email=?, date_of_birth=?, address=?, fee_status=? WHERE id=?`,
-      [full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, fee_status, id]
+      `UPDATE students SET full_name=?, class_id=?, phone=?, whatsapp_no=?, email=?, date_of_birth=?, address=?, fee_status=?, deactivated_date=? WHERE id=?`,
+      [full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, fee_status, deactivatedDate, id]
     );
 
-    // ✅ Send update email
-    if (email) {
-      sendStudentUpdateEmail(email, full_name)
-        .catch(e => console.error('Student update email failed:', e.message));
-    }
-
-    // ✅ Send update WhatsApp
+    if (email) sendStudentUpdateEmail(email, full_name).catch(e => console.error('Student update email failed:', e.message));
     const waPhone = whatsapp_no || phone;
-    if (waPhone) {
-      sendStudentUpdateWhatsApp(waPhone, full_name)
-        .catch(e => console.error('Student update WhatsApp failed:', e.message));
-    }
+    if (waPhone) sendStudentUpdateWhatsApp(waPhone, full_name).catch(e => console.error('Student update WhatsApp failed:', e.message));
 
     res.json({ message: 'Student updated successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }

@@ -308,6 +308,7 @@ exports.getAllStudentsWithFeeStatus = async (req, res) => {
         s.full_name, 
         c.name as class_name,
         s.fee_status as student_status,
+        s.deactivated_date,
         COALESCE(SUM(fp.amount), 0) as paid_amount,
         COUNT(fp.id) as payment_count,
         GROUP_CONCAT(DISTINCT ft.name ORDER BY fp.payment_date SEPARATOR ', ') as fee_types_paid,
@@ -330,7 +331,7 @@ exports.getAllStudentsWithFeeStatus = async (req, res) => {
       params.push(effectiveClassId);
     }
 
-    query += ` GROUP BY s.id, s.roll_no, s.full_name, c.name 
+    query += ` GROUP BY s.id, s.roll_no, s.full_name, c.name,  s.deactivated_date
                ORDER BY 
                  CASE WHEN COUNT(fp.id) > 0 THEN 0 ELSE 1 END,
                  c.name, s.roll_no`;
