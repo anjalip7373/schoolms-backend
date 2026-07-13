@@ -7,7 +7,7 @@ const authenticateToken = (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'Access token required' });
 
   jwt.verify(token, process.env.JWT_SECRET || 'school_secret_key', (err, user) => {
-    if (err) return res.status(403).json({ message: 'Invalid or expired token' });
+    if (err) return res.status(401).json({ message: 'Invalid or expired token' });
     req.user = user;
     next();
   });
