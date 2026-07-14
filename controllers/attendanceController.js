@@ -220,7 +220,7 @@ exports.getAttendanceReport = async (req, res) => {
 
     if (person_type === 'student' || !person_type) {
       let query = `
-        SELECT s.id, s.roll_no, s.full_name, c.name as class_name, s.fee_status,
+        SELECT s.id, s.roll_no, s.full_name, c.name as class_name, s.fee_status, s.deactivated_date,
         COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_days,
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
@@ -240,7 +240,7 @@ exports.getAttendanceReport = async (req, res) => {
         query += ' AND s.class_id = ?';
         params.push(parseInt(effectiveClassId));
       }
-      query += ' GROUP BY s.id, s.roll_no, s.full_name, c.name ORDER BY c.name, s.roll_no';
+      query += ' GROUP BY s.id, s.roll_no, s.full_name, c.name, s.deactivated_date ORDER BY c.name, s.roll_no';
 
       console.log('EXECUTING STUDENT QUERY with params:', params);
       const [rows] = await pool.execute(query, params);
@@ -251,7 +251,7 @@ exports.getAttendanceReport = async (req, res) => {
       const userRole = req.user.role;
 
       let empQuery = `
-        SELECT u.id, u.emp_id as roll_no, u.full_name, r.name as class_name, u.is_active,
+        SELECT u.id, u.emp_id as roll_no, u.full_name, r.name as class_name, u.is_active, u.deactivated_date,
         COUNT(CASE WHEN a.status = 'present' THEN 1 END) as present_days,
         COUNT(CASE WHEN a.status = 'absent' THEN 1 END) as absent_days,
         COUNT(CASE WHEN a.status = 'late' THEN 1 END) as late_days,
@@ -271,7 +271,7 @@ exports.getAttendanceReport = async (req, res) => {
         empQuery += ` AND r.name NOT IN ('admin', 'principal')`;
       }
 
-      empQuery += ` GROUP BY u.id, u.emp_id, u.full_name, r.name ORDER BY u.full_name`;
+      empQuery += ` GROUP BY u.id, u.emp_id, u.full_name, r.name, u.is_active, u.deactivated_date ORDER BY u.full_name`;
 
       const [rows] = await pool.execute(empQuery, empParams);
       results = [...results, ...rows];
