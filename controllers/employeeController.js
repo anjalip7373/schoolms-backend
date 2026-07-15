@@ -33,11 +33,12 @@ exports.getAllEmployees = async (req, res) => {
 exports.addEmployee = async (req, res) => {
   try {
     const { full_name, role_id, login_user_id, login_password, phone, email, date_of_birth, qualification, subject, salary, joining_date, class_assigned } = req.body;
+    const dobVal = date_of_birth || null;
 
     // Guard: no duplicate employee (same name + date of birth + phone), across active AND deactivated records
     const [dupRows] = await pool.execute(
       `SELECT id, is_active FROM users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(?)) AND date_of_birth = ? AND phone = ?`,
-      [full_name, date_of_birth, phone]
+      [full_name, dobVal, phone]
     );
     if (dupRows.length) {
       const existing = dupRows[0];
