@@ -30,8 +30,8 @@ exports.getDashboard = async (req, res) => {
 
     // Total active students
     const [totalStudentsRes] = await pool.execute(
-      `SELECT COUNT(*) as cnt FROM students s WHERE s.is_active = 1${classCond}`,
-      classParams
+      `SELECT COUNT(*) as cnt FROM students s WHERE (s.deactivated_date IS NULL OR DATE_FORMAT(s.deactivated_date, '%Y-%m') >= ?)${classCond}`,
+      [monthStr, ...classParams]
     );
     const totalStudents = totalStudentsRes[0].cnt;
 
@@ -40,8 +40,8 @@ exports.getDashboard = async (req, res) => {
       `SELECT COUNT(DISTINCT fp.student_id) as cnt
        FROM fee_payments fp
        JOIN students s ON s.id = fp.student_id
-       WHERE DATE_FORMAT(fp.payment_date,'%Y-%m') = ? AND s.is_active = 1${classCond}`,
-      [monthStr, ...classParams]
+       WHERE DATE_FORMAT(fp.payment_date,'%Y-%m') = ? AND (s.deactivated_date IS NULL OR DATE_FORMAT(s.deactivated_date, '%Y-%m') >= ?)${classCond}`,
+      [monthStr, monthStr, ...classParams]
     );
     const paidCount = paidRes[0].cnt;
     const notPaidCount = totalStudents - paidCount;
@@ -49,37 +49,37 @@ exports.getDashboard = async (req, res) => {
     // ── FEE DETAIL LISTS ───────────────────────────────────────────────────
     // Students who PAID this month
     const [paidStudents] = await pool.execute(
-      `SELECT DISTINCT s.id, s.roll_no, s.full_name, c.name as class_name
+      `SELECT DISTINCT s.id, s.roll_no, s.full_name, c.name as class_name, s.fee_status, s.deactivated_date
        FROM fee_payments fp
        JOIN students s ON s.id = fp.student_id
        JOIN classes c ON c.id = s.class_id
-       WHERE DATE_FORMAT(fp.payment_date,'%Y-%m') = ? AND s.is_active = 1${classCond}
+       WHERE DATE_FORMAT(fp.payment_date,'%Y-%m') = ? AND (s.deactivated_date IS NULL OR DATE_FORMAT(s.deactivated_date, '%Y-%m') >= ?)${classCond}
        ORDER BY s.roll_no`,
-      [monthStr, ...classParams]
+      [monthStr, monthStr, ...classParams]
     );
 
     // Students who have NOT paid this month
     const [notPaidStudents] = await pool.execute(
-      `SELECT s.id, s.roll_no, s.full_name, c.name as class_name
+      `SELECT s.id, s.roll_no, s.full_name, c.name as class_name, s.fee_status, s.deactivated_date
        FROM students s
        JOIN classes c ON c.id = s.class_id
-       WHERE s.is_active = 1${classCond}
+       WHERE (s.deactivated_date IS NULL OR DATE_FORMAT(s.deactivated_date, '%Y-%m') >= ?)${classCond}
        AND s.id NOT IN (
          SELECT DISTINCT fp.student_id FROM fee_payments fp
          WHERE DATE_FORMAT(fp.payment_date,'%Y-%m') = ?
        )
        ORDER BY s.roll_no`,
-      [...classParams, monthStr]
+      [monthStr, ...classParams, monthStr]
     );
 
     // All active students list
     const [allStudentsList] = await pool.execute(
-      `SELECT s.id, s.roll_no, s.full_name, c.name as class_name
+      `SELECT s.id, s.roll_no, s.full_name, c.name as class_name, s.fee_status, s.deactivated_date
        FROM students s
        JOIN classes c ON c.id = s.class_id
-       WHERE s.is_active = 1${classCond}
+       WHERE (s.deactivated_date IS NULL OR DATE_FORMAT(s.deactivated_date, '%Y-%m') >= ?)${classCond}
        ORDER BY s.roll_no`,
-      classParams
+      [monthStr, ...classParams]
     );
 
     // ── SALARY STATS ───────────────────────────────────────────────────────
@@ -92,8 +92,8 @@ exports.getDashboard = async (req, res) => {
          COUNT(DISTINCT CASE WHEN ss.id IS NOT NULL THEN u.id END) as generated_count
          FROM users u
          LEFT JOIN salary_slips ss ON ss.employee_id = u.id AND ss.month = ?
-         WHERE u.is_active = 1`,
-        [monthStr]
+         WHERE (u.deactivated_date IS NULL OR DATE_FORMAT(u.deactivated_date, '%Y-%m') >= ?)`,
+        [monthStr, monthStr]
       );
       salaryTotal = salaryRes[0].total_employees;
       salaryGenerated = salaryRes[0].generated_count || 0;
@@ -101,38 +101,38 @@ exports.getDashboard = async (req, res) => {
       // Employees WITH salary slip this month (DISTINCT so employees with
       // multiple slip rows in the same month don't appear/count more than once)
       const [genRes] = await pool.execute(
-        `SELECT DISTINCT u.id, u.emp_id, u.full_name, r.name as role_name
+        `SELECT DISTINCT u.id, u.emp_id, u.full_name, r.name as role_name, u.is_active, u.deactivated_date
          FROM salary_slips ss
          JOIN users u ON u.id = ss.employee_id
          LEFT JOIN roles r ON r.id = u.role_id
-         WHERE ss.month = ? AND u.is_active = 1
+         WHERE ss.month = ? AND (u.deactivated_date IS NULL OR DATE_FORMAT(u.deactivated_date, '%Y-%m') >= ?)
          ORDER BY u.full_name`,
-        [monthStr]
+        [monthStr, monthStr]
       );
       salaryGeneratedList = genRes;
 
       // Employees WITHOUT salary slip this month
       const [notGenRes] = await pool.execute(
-        `SELECT u.id, u.emp_id, u.full_name, r.name as role_name
+        `SELECT u.id, u.emp_id, u.full_name, r.name as role_name, u.is_active, u.deactivated_date
          FROM users u
          LEFT JOIN roles r ON r.id = u.role_id
-         WHERE u.is_active = 1
+         WHERE (u.deactivated_date IS NULL OR DATE_FORMAT(u.deactivated_date, '%Y-%m') >= ?)
          AND u.id NOT IN (
            SELECT DISTINCT ss.employee_id FROM salary_slips ss WHERE ss.month = ?
          )
          ORDER BY u.full_name`,
-        [monthStr]
+        [monthStr, monthStr]
       );
       salaryNotGeneratedList = notGenRes;
 
       // All active employees
       const [allEmpRes] = await pool.execute(
-        `SELECT u.id, u.emp_id, u.full_name, r.name as role_name
+        `SELECT u.id, u.emp_id, u.full_name, r.name as role_name, u.is_active, u.deactivated_date
          FROM users u
          LEFT JOIN roles r ON r.id = u.role_id
-         WHERE u.is_active = 1
+         WHERE (u.deactivated_date IS NULL OR DATE_FORMAT(u.deactivated_date, '%Y-%m') >= ?)
          ORDER BY u.full_name`,
-        []
+        [monthStr]
       );
       allEmployeesList = allEmpRes;
     }
