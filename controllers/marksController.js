@@ -74,6 +74,13 @@ exports.assignClassSubject = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
+exports.removeClassSubject = async (req, res) => {
+  try {
+    await pool.execute('DELETE FROM class_subjects WHERE id = ?', [req.params.id]);
+    res.json({ message: 'Subject removed from class' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
 // ── EXAM TYPES (FULLY DYNAMIC DATABASE HANDLERS) ────────────────
 exports.getExamTypes = async (req, res) => {
   try {
