@@ -236,10 +236,9 @@ exports.getAttendanceReport = async (req, res) => {
         WHERE 1=1`;
 
       const params = [fromDate, toDate];
-      if (effectiveClassId) {
-        query += ' AND s.class_id = ?';
-        params.push(parseInt(effectiveClassId));
-      }
+      query += ' AND DATE_FORMAT(s.created_at, "%Y-%m") <= ?';
+      params.push(`${toY}-${toM}`);
+      if (effectiveClassId) { query += ' AND s.class_id = ?'; params.push(parseInt(effectiveClassId)); }
       query += ' GROUP BY s.id, s.roll_no, s.full_name, c.name, s.deactivated_date ORDER BY c.name, s.roll_no';
 
       console.log('EXECUTING STUDENT QUERY with params:', params);
@@ -266,12 +265,15 @@ exports.getAttendanceReport = async (req, res) => {
         WHERE 1=1`;
 
       const empParams = [fromDate, toDate];
+      empQuery += ' AND DATE_FORMAT(u.created_at, "%Y-%m") <= ?';
+      empParams.push(`${toY}-${toM}`);
 
       if (userRole === 'principal') {
         empQuery += ` AND r.name NOT IN ('admin', 'principal')`;
       }
 
       empQuery += ` GROUP BY u.id, u.emp_id, u.full_name, r.name, u.is_active, u.deactivated_date ORDER BY u.full_name`;
+
 
       const [rows] = await pool.execute(empQuery, empParams);
       results = [...results, ...rows];
