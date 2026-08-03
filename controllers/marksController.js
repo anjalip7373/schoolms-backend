@@ -134,9 +134,15 @@ exports.getMarks = async (req, res) => {
       if (etRows.length > 0) examName = etRows[0].name;
     }
 
+    // Academic year is stored as "2026-2027" (Apr 2026 – Mar 2027). A student only "existed"
+    // for this academic year if they joined on or before its last day (March 31 of the end year).
+    const ayParts = String(academic_year || '').split('-').map(y => parseInt(y, 10));
+    const ayEndYear = ayParts[1] || ayParts[0] || new Date().getFullYear();
+    const academicYearEndDate = `${ayEndYear}-03-31 23:59:59`;
+
     const [students] = await pool.execute(
-      `SELECT s.id, s.roll_no, s.full_name, s.fee_status FROM students s WHERE s.class_id = ? AND s.is_active = 1 ORDER BY s.roll_no`,
-      [effectiveClassId]
+      `SELECT s.id, s.roll_no, s.full_name, s.fee_status FROM students s WHERE s.class_id = ? AND s.is_active = 1 AND s.created_at <= ? ORDER BY s.roll_no`,
+      [effectiveClassId, academicYearEndDate]
     );
 
     const [configRows] = await pool.execute(

@@ -208,6 +208,9 @@ exports.getAllEmployeesWithSalaryStatus = async (req, res) => {
 
     const params = [fromStr, toStr];
 
+    query += ' AND DATE_FORMAT(u.created_at, "%Y-%m") <= ?';
+    params.push(toStr);
+
     if (userRole === 'principal') {
       query += ` AND r.name NOT IN ('admin','principal')`;
     }

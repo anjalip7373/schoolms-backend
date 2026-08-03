@@ -324,7 +324,10 @@ exports.getAllStudentsWithFeeStatus = async (req, res) => {
       LEFT JOIN fee_types ft ON fp.fee_type_id = ft.id
       WHERE 1=1`;
 
-    const params = [fromDate, toDate];
+      const params = [fromDate, toDate];
+
+    query += ' AND DATE_FORMAT(s.created_at, "%Y-%m") <= ?';
+    params.push(`${toY}-${toM}`);
 
     if (effectiveClassId) {
       query += ' AND s.class_id = ?';
@@ -332,6 +335,7 @@ exports.getAllStudentsWithFeeStatus = async (req, res) => {
     }
 
     query += ` GROUP BY s.id, s.roll_no, s.full_name, c.name,  s.deactivated_date
+    
                ORDER BY 
                  CASE WHEN COUNT(fp.id) > 0 THEN 0 ELSE 1 END,
                  c.name, s.roll_no`;

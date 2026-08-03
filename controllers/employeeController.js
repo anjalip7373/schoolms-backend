@@ -10,7 +10,7 @@ const generateEmpId = async () => {
 
 exports.getAllEmployees = async (req, res) => {
   try {
-    const { role_type } = req.query;
+    const { role_type, to_month, to_year } = req.query;
     const userRole = req.user.role;
     let query = `SELECT u.*, r.name as role_name, c.name as class_name 
                  FROM users u LEFT JOIN roles r ON u.role_id = r.id
@@ -23,6 +23,10 @@ exports.getAllEmployees = async (req, res) => {
     }
     if (userRole === 'principal') {
       query += ` AND r.name NOT IN ('admin','principal')`;
+    }
+    if (to_month && to_year) {
+      query += ' AND DATE_FORMAT(u.created_at, "%Y-%m") <= ?';
+      params.push(`${to_year}-${String(to_month).padStart(2, '0')}`);
     }
     query += ' ORDER BY u.created_at DESC';
     const [rows] = await pool.execute(query, params);

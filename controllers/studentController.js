@@ -17,7 +17,7 @@ const getTeacherClass = async (userId, role) => {
 
 exports.getAllStudents = async (req, res) => {
   try {
-    const { search } = req.query;
+    const { search, to_month, to_year } = req.query;
     let { class_id } = req.query;
     const teacherClass = await getTeacherClass(req.user.id, req.user.role);
     if (teacherClass) class_id = teacherClass;
@@ -25,6 +25,10 @@ exports.getAllStudents = async (req, res) => {
     const params = [];
     if (class_id) { query += ' AND s.class_id = ?'; params.push(class_id); }
     if (search) { query += ' AND (s.full_name LIKE ? OR s.roll_no LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+    if (to_month && to_year) {
+      query += ' AND DATE_FORMAT(s.created_at, "%Y-%m") <= ?';
+      params.push(`${to_year}-${String(to_month).padStart(2, '0')}`);
+    }
     query += ' ORDER BY s.roll_no ASC';
     const [rows] = await pool.execute(query, params);
     res.json(rows);
