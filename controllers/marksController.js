@@ -101,7 +101,16 @@ exports.addExamType = async (req, res) => {
 exports.updateExamType = async (req, res) => {
   try {
     const { name } = req.body;
+    const [oldRows] = await pool.execute('SELECT name FROM exam_types WHERE id=?', [req.params.id]);
+    const oldName = oldRows[0]?.name;
+
     await pool.execute('UPDATE exam_types SET name=? WHERE id=?', [name, req.params.id]);
+
+    // ✅ FIX: keep exam_subject_config.exam_type text in sync so criteria don't get orphaned on rename
+    if (oldName && oldName !== name) {
+      await pool.execute('UPDATE exam_subject_config SET exam_type=? WHERE exam_type=?', [name, oldName]);
+    }
+
     res.json({ message: 'Exam type updated successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
