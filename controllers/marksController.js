@@ -146,16 +146,24 @@ exports.getMarks = async (req, res) => {
     );
 
     const [configRows] = await pool.execute(
-      `SELECT subject_id, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ? AND exam_type = ?`,
-      [effectiveClassId, examName]
+      `SELECT subject_id, exam_type, max_marks, pass_marks FROM exam_subject_config WHERE class_id = ?`,
+      [effectiveClassId]
     );
 
     const [baseSubjects] = await pool.execute(`
       SELECT s.*, cs.id as class_subject_id FROM class_subjects cs JOIN subjects s ON cs.subject_id = s.id WHERE cs.class_id = ? ORDER BY s.name
     `, [effectiveClassId]);
 
+    // ✅ FIXED: match config rows case/whitespace-insensitively on exam_type, same as getMarksheet.
+    // Previously this filtered exam_type = examName directly in SQL, so any case or whitespace
+    // mismatch between exam_types.name and exam_subject_config.exam_type silently missed the
+    // config row and fell back to the hardcoded 100/35 default (e.g. English configured for 20
+    // marks still showing "/100" on the Marks Entry page).
     const subjects = baseSubjects.map(sub => {
-      const cfg = configRows.find(c => c.subject_id === sub.id);
+      const cfg = configRows.find(c =>
+        c.subject_id === sub.id &&
+        String(c.exam_type).trim().toLowerCase() === String(examName).trim().toLowerCase()
+      );
       return {
         ...sub,
         max_marks: cfg ? cfg.max_marks : (sub.max_marks || 100),
