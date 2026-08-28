@@ -225,6 +225,20 @@ exports.getProfile = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const { full_name, phone, email, address } = req.body;
+
+    // Server-side validation — never trust the client, even though the frontend also validates.
+    const errors = [];
+    if (!full_name || !full_name.trim()) errors.push('Full name is required');
+    else if (!/^[A-Za-z ._'-]+$/.test(full_name.trim())) errors.push('Full name should not contain numbers or symbols');
+
+    if (phone && !/^\d{10}$/.test(phone)) errors.push('Phone number must be exactly 10 digits');
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.push('Enter a valid email address');
+
+    if (errors.length) {
+      return res.status(400).json({ message: errors[0], errors });
+    }
+
     await pool.execute(
       `UPDATE users SET full_name=?, phone=?, email=?, address=? WHERE id=?`,
       [full_name, phone, email, address, req.user.id]
