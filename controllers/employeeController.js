@@ -131,6 +131,19 @@ exports.updateEmployee = async (req, res) => {
       return res.status(403).json({ message: `${activeCheck[0].full_name} is deactivated and cannot be edited. Reactivate first.` });
     }
 
+    // Guard: no duplicate employee (same name + date of birth + phone) on ANY other record, active or deactivated
+    const [dupRows] = await pool.execute(
+      `SELECT id, is_active FROM users WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(?)) AND date_of_birth = ? AND phone = ? AND id != ?`,
+      [full_name, date_of_birth || null, phone, id]
+    );
+    if (dupRows.length) {
+      const existing = dupRows[0];
+      if (!existing.is_active) {
+        return res.status(409).json({ message: `${full_name} already exists (deactivated) — reactivate that record instead.` });
+      }
+      return res.status(409).json({ message: `${full_name} already exists as an active employee with the same date of birth and phone number.` });
+    }
+
     await pool.execute(
       `UPDATE users SET full_name=?, phone=?, email=?, date_of_birth=?, qualification=?, subject=?, salary=?, joining_date=?, class_assigned=? WHERE id=?`,
       [full_name, phone, email || null, date_of_birth || null, qualification, subject, salary, joining_date, class_assigned, id]
