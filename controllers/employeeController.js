@@ -8,6 +8,27 @@ const generateEmpId = async () => {
   return `EMP${String(rows[0].cnt + 1).padStart(3,'0')}`;
 };
 
+// Server-side validation — never trust the client, even though the frontend also validates.
+const validateEmployeeInput = ({ full_name, phone, email, date_of_birth, salary, joining_date }) => {
+  const errors = [];
+
+  if (!full_name || !full_name.trim()) errors.push('Full name is required');
+  else if (!/^[A-Za-z ._'-]+$/.test(full_name.trim())) errors.push('Full name should not contain numbers or symbols');
+
+  if (!phone || !/^\d{10}$/.test(phone)) errors.push('Phone number must be exactly 10 digits');
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.push('A valid email address is required');
+
+  if (!date_of_birth || isNaN(new Date(date_of_birth).getTime())) errors.push('A valid date of birth is required');
+  else if (new Date(date_of_birth) > new Date()) errors.push('Date of birth cannot be in the future');
+
+  if (salary === undefined || salary === null || salary === '' || isNaN(salary) || Number(salary) < 0) errors.push('A valid salary is required');
+
+  if (!joining_date || isNaN(new Date(joining_date).getTime())) errors.push('A valid joining date is required');
+
+  return errors;
+};
+
 exports.getAllEmployees = async (req, res) => {
   try {
     const { role_type, to_month, to_year } = req.query;
@@ -38,6 +59,16 @@ exports.addEmployee = async (req, res) => {
   try {
     const { full_name, role_id, login_user_id, login_password, phone, email, date_of_birth, qualification, subject, salary, joining_date, class_assigned } = req.body;
     const dobVal = date_of_birth || null;
+
+    const validationErrors = validateEmployeeInput({ full_name, phone, email, date_of_birth, salary, joining_date });
+    if (!role_id) validationErrors.push('Role is required');
+    if (!login_user_id || !login_user_id.trim()) validationErrors.push('Login User ID is required');
+    else if (/\s/.test(login_user_id)) validationErrors.push('Login User ID should not contain spaces');
+    if (!login_password || login_password.length < 8) validationErrors.push('Password must be at least 8 characters');
+    if (!qualification || !qualification.trim()) validationErrors.push('Qualification is required');
+    if (validationErrors.length) {
+      return res.status(400).json({ message: validationErrors[0], errors: validationErrors });
+    }
 
     // Guard: no duplicate employee (same name + date of birth + phone), across active AND deactivated records
     const [dupRows] = await pool.execute(
@@ -86,6 +117,12 @@ exports.updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
     const { full_name, phone, email, date_of_birth, qualification, subject, salary, joining_date, class_assigned } = req.body;
+
+    const validationErrors = validateEmployeeInput({ full_name, phone, email, date_of_birth, salary, joining_date });
+    if (!qualification || !qualification.trim()) validationErrors.push('Qualification is required');
+    if (validationErrors.length) {
+      return res.status(400).json({ message: validationErrors[0], errors: validationErrors });
+    }
 
     // Guard: deactivated employees cannot be edited (use the reactivate button first)
     const [activeCheck] = await pool.execute('SELECT is_active, full_name FROM users WHERE id = ?', [id]);
