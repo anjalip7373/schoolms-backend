@@ -15,6 +15,26 @@ const getTeacherClass = async (userId, role) => {
   return rows[0]?.class_assigned || null;
 };
 
+// Server-side validation — never trust the client, even though the frontend also validates.
+const validateStudentInput = ({ full_name, phone, whatsapp_no, email, date_of_birth, address }) => {
+  const errors = [];
+
+  if (!full_name || !full_name.trim()) errors.push('Full name is required');
+  else if (!/^[A-Za-z ._'-]+$/.test(full_name.trim())) errors.push('Full name should not contain numbers or symbols');
+
+  if (!phone || !/^\d{10}$/.test(phone)) errors.push('Phone number must be exactly 10 digits');
+  if (!whatsapp_no || !/^\d{10}$/.test(whatsapp_no)) errors.push('WhatsApp number must be exactly 10 digits');
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) errors.push('A valid email address is required');
+
+  if (!date_of_birth || isNaN(new Date(date_of_birth).getTime())) errors.push('A valid date of birth is required');
+  else if (new Date(date_of_birth) > new Date()) errors.push('Date of birth cannot be in the future');
+
+  if (!address || !address.trim()) errors.push('Address is required');
+
+  return errors;
+};
+
 exports.getAllStudents = async (req, res) => {
   try {
     const { search, to_month, to_year } = req.query;
@@ -38,6 +58,12 @@ exports.getAllStudents = async (req, res) => {
 exports.addStudent = async (req, res) => {
   try {
     const { full_name, class_id, phone, whatsapp_no, email, date_of_birth, address } = req.body;
+
+    const validationErrors = validateStudentInput({ full_name, phone, whatsapp_no, email, date_of_birth, address });
+    if (!class_id) validationErrors.push('Class is required');
+    if (validationErrors.length) {
+      return res.status(400).json({ message: validationErrors[0], errors: validationErrors });
+    }
 
     // Guard: no duplicate student (same name + date of birth + phone), across active AND deactivated records
     const [dupRows] = await pool.execute(
@@ -88,6 +114,12 @@ exports.updateStudent = async (req, res) => {
   try {
     const { id } = req.params;
     const { full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, fee_status } = req.body;
+
+    const validationErrors = validateStudentInput({ full_name, phone, whatsapp_no, email, date_of_birth, address });
+    if (!class_id) validationErrors.push('Class is required');
+    if (validationErrors.length) {
+      return res.status(400).json({ message: validationErrors[0], errors: validationErrors });
+    }
 
     const [activeCheck] = await pool.execute('SELECT fee_status, deactivated_date, full_name FROM students WHERE id = ?', [id]);
     if (!activeCheck.length) return res.status(404).json({ message: 'Student not found' });
