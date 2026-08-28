@@ -128,6 +128,19 @@ exports.updateStudent = async (req, res) => {
       return res.status(403).json({ message: `${activeCheck[0].full_name} is deactivated and cannot be edited. Reactivate first.` });
     }
 
+    // Guard: no duplicate student (same name + date of birth + phone) on ANY other record, active or deactivated
+    const [dupRows] = await pool.execute(
+      `SELECT id, fee_status FROM students WHERE LOWER(TRIM(full_name)) = LOWER(TRIM(?)) AND date_of_birth = ? AND phone = ? AND id != ?`,
+      [full_name, date_of_birth, phone, id]
+    );
+    if (dupRows.length) {
+      const existing = dupRows[0];
+      if (existing.fee_status === 'inactive') {
+        return res.status(409).json({ message: `${full_name} already exists (deactivated) — reactivate that record instead.` });
+      }
+      return res.status(409).json({ message: `${full_name} already exists as an active student with the same date of birth and phone number.` });
+    }
+
     // Stamp/clear deactivated_date based on the transition
     let deactivatedDate = null; // keep NULL if staying/becoming active
     if (fee_status !== 'active') {
