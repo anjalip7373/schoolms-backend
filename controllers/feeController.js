@@ -87,7 +87,7 @@ exports.createFeePayment = async (req, res) => {
     const receipt_no = await generateReceiptNo();
     const totalAmount = items.reduce((sum, it) => sum + parseFloat(it.amount || 0), 0);
 
-    // Insert all rows in one transaction (all saved, or none)
+       // Insert all rows in one transaction (all saved, or none)
     conn = await pool.getConnection();
     await conn.beginTransaction();
     for (const it of items) {
@@ -95,14 +95,14 @@ exports.createFeePayment = async (req, res) => {
         `INSERT INTO fee_payments (receipt_no, student_id, fee_type_id, amount, payment_date, payment_month, payment_method, remarks, generated_by)
          VALUES (?,?,?,?,?,?,?,?,?)`,
         [
-          receipt_no,
-          student_id,
-          it.fee_type_id,
-          it.amount,
-          payment_date,
-          payment_month,
+          receipt_no ?? null,
+          student_id ?? null,
+          it.fee_type_id ?? null,
+          it.amount ?? null,
+          payment_date ?? null,
+          payment_month ?? null,
           payment_method || 'Cash',
-          remarks,
+          remarks ?? null,
           req.user?.id ?? null
         ]
       );
