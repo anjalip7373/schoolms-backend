@@ -26,6 +26,14 @@ exports.sendBroadcast = async (req, res) => {
       return res.status(400).json({ message: 'Title and message are required' });
     }
 
+    // Media file detection
+    let fileUrl = null, fileName = null, fileType = null;
+    if (req.file) {
+      fileUrl = `${process.env.PUBLIC_BASE_URL || 'http://localhost:5000'}/uploads/${req.file.filename}`;
+      fileName = req.file.originalname;
+      fileType = req.file.mimetype;
+    }
+
     // Get recipients based on target
     let recipients = [];
 
@@ -66,22 +74,33 @@ exports.sendBroadcast = async (req, res) => {
     console.log(`Broadcasting to ${recipients.length} recipients`);
 
     // Save broadcast record
-    const [result] = await pool.execute(
-      `INSERT INTO broadcasts (title, message, target_type, target_class_id, sent_by, sent_count)
-       VALUES (?,?,?,?,?,?)`,
-      [title, message, target_type, target_class_id || null, req.user.id, recipients.length]
-    );
+    let result;
+    try {
+      [result] = await pool.execute(
+        `INSERT INTO broadcasts (title, message, target_type, target_class_id, sent_by, sent_count, file_url, file_name, file_type)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [title, message, target_type, target_class_id || null, req.user.id, recipients.length, fileUrl, fileName, fileType]
+      );
+    } catch (dbErr) {
+      // Fallback if file_url/file_name/file_type columns don't exist yet on this DB
+      [result] = await pool.execute(
+        `INSERT INTO broadcasts (title, message, target_type, target_class_id, sent_by, sent_count)
+         VALUES (?,?,?,?,?,?)`,
+        [title, message, target_type, target_class_id || null, req.user.id, recipients.length]
+      );
+    }
 
     // Send emails async
     if (recipients.length > 0) {
-      sendBroadcastNotifications(recipients, title, message, req.user.full_name || 'SchoolMS')
+      sendBroadcastNotifications(recipients, title, message, req.user.full_name || 'SchoolMS', fileUrl)
         .catch(e => console.error('Broadcast notification error:', e.message));
     }
 
     res.json({
       message: `Broadcast sent to ${recipients.length} recipients`,
       broadcast_id: result.insertId,
-      sent_count: recipients.length
+      sent_count: recipients.length,
+      file_url: fileUrl
     });
 
   } catch (err) {
@@ -98,26 +117,26 @@ exports.deleteBroadcast = async (req, res) => {
 };
 
 // Send emails in batches
-const sendBroadcastNotifications = async (recipients, title, message, senderName) => {
+const sendBroadcastNotifications = async (recipients, title, message, senderName, fileUrl) => {
   const { sendBroadcastEmail } = require('../config/emailService');
   let emailSent = 0, whatsappSent = 0;
 
   for (const recipient of recipients) {
-    // Send Email
+    // Send Email — attachment shown as a button using the same fileUrl
     if (recipient.email) {
       try {
-        await sendBroadcastEmail(recipient.email, recipient.full_name, title, message, senderName);
+        await sendBroadcastEmail(recipient.email, recipient.full_name, title, message, senderName, fileUrl);
         emailSent++;
       } catch (e) {
         console.error(`Email failed for ${recipient.email}:`, e.message);
       }
     }
 
-    // Send WhatsApp
+    // Send WhatsApp — image/PDF sent as real media, not a text link
     const phone = recipient.whatsapp_no || recipient.phone;
     if (phone) {
       try {
-        await sendBroadcastWhatsApp(phone, recipient.full_name, title, message);
+        await sendBroadcastWhatsApp(phone, recipient.full_name, title, message, fileUrl);
         whatsappSent++;
       } catch (e) {
         console.error(`WhatsApp failed for ${phone}:`, e.message);
@@ -137,6 +156,14 @@ exports.sendWhatsAppBroadcast = async (req, res) => {
 
     if (!title || !message) {
       return res.status(400).json({ message: 'Title and message are required' });
+    }
+
+    // Media file detection
+    let fileUrl = null, fileName = null, fileType = null;
+    if (req.file) {
+      fileUrl = `${process.env.PUBLIC_BASE_URL || 'http://localhost:5000'}/uploads/${req.file.filename}`;
+      fileName = req.file.originalname;
+      fileType = req.file.mimetype;
     }
 
     // Get recipients with phone numbers
@@ -183,21 +210,31 @@ exports.sendWhatsAppBroadcast = async (req, res) => {
     console.log(`WhatsApp broadcast to ${withPhone.length} recipients`);
 
     // Save to broadcast history
-    const [result] = await pool.execute(
-      `INSERT INTO broadcasts (title, message, target_type, target_class_id, sent_by, sent_count)
-       VALUES (?,?,?,?,?,?)`,
-      [`[WhatsApp] ${title}`, message, target_type, target_class_id || null, req.user.id, withPhone.length]
-    );
+    let result;
+    try {
+      [result] = await pool.execute(
+        `INSERT INTO broadcasts (title, message, target_type, target_class_id, sent_by, sent_count, file_url, file_name, file_type)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [`[WhatsApp] ${title}`, message, target_type, target_class_id || null, req.user.id, withPhone.length, fileUrl, fileName, fileType]
+      );
+    } catch (dbErr) {
+      [result] = await pool.execute(
+        `INSERT INTO broadcasts (title, message, target_type, target_class_id, sent_by, sent_count)
+         VALUES (?,?,?,?,?,?)`,
+        [`[WhatsApp] ${title}`, message, target_type, target_class_id || null, req.user.id, withPhone.length]
+      );
+    }
 
     // Send WhatsApp messages async — don't block response
-    sendWhatsAppMessages(withPhone, title, message)
+    sendWhatsAppMessages(withPhone, title, message, req.user.full_name, fileUrl)
       .catch(e => console.error('WhatsApp broadcast error:', e.message));
 
     res.json({
       message: `WhatsApp broadcast sending to ${withPhone.length} recipients`,
       broadcast_id: result.insertId,
       sent_count: withPhone.length,
-      skipped: recipients.length - withPhone.length
+      skipped: recipients.length - withPhone.length,
+      file_url: fileUrl
     });
 
   } catch (err) {
@@ -206,12 +243,12 @@ exports.sendWhatsAppBroadcast = async (req, res) => {
   }
 };
 
-const sendWhatsAppMessages = async (recipients, title, message, senderName) => {
+const sendWhatsAppMessages = async (recipients, title, message, senderName, fileUrl) => {
   let sent = 0;
   for (const recipient of recipients) {
     try {
       const phone = recipient.phone || recipient.phone2;
-      await sendBroadcastWhatsApp(phone, recipient.full_name, title, message, senderName);
+      await sendBroadcastWhatsApp(phone, recipient.full_name, title, message, fileUrl);
       sent++;
       console.log(`WhatsApp sent to: ${recipient.full_name}`);
     } catch (e) {

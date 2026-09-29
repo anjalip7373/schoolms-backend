@@ -330,8 +330,13 @@ const sendSalarySlipNotification = async (toEmail, slip) => {
 };
 
 // ─── SEND BROADCAST EMAIL ─────────────────────────────────────
-const sendBroadcastEmail = async (toEmail, toName, title, message, senderName) => {
+const sendBroadcastEmail = async (toEmail, toName, title, message, senderName, fileUrl) => {
   const formattedMessage = message.replace(/\n/g, '<br/>');
+  const attachmentBlock = fileUrl
+    ? `<div style="text-align:center;margin:16px 0;">
+         <a href="${fileUrl}" style="display:inline-block;background:#1e40af;color:#fff;text-decoration:none;padding:10px 20px;border-radius:8px;font-weight:700;font-size:13px;">📎 View Attachment</a>
+       </div>`
+    : '';
   return sendEmail({
     to: toEmail,
     subject: `📢 ${title} — SchoolMS`,
@@ -344,6 +349,7 @@ const sendBroadcastEmail = async (toEmail, toName, title, message, senderName) =
           <p style="font-size:16px;font-weight:800;">${title}</p>
           <p>Dear <strong>${toName}</strong>,</p>
           <div style="background:#f8fafc;border-radius:10px;padding:20px;margin:16px 0;">${formattedMessage}</div>
+          ${attachmentBlock}
           <p style="font-size:12px;color:#94a3b8;">Sent by <strong>${senderName}</strong></p>
         </div>
       </div>`

@@ -23,18 +23,21 @@ const getIndiaDateTimeString = () => {
   });
 };
 
-const sendWhatsApp = async (toPhone, message) => {
+const sendWhatsApp = async (toPhone, message, mediaUrl) => {
   try {
     const formatted = formatPhone(toPhone);
     if (!formatted) {
       console.log('Invalid phone number:', toPhone);
       return false;
     }
-    const msg = await client.messages.create({
+    const payload = {
       from: process.env.TWILIO_WHATSAPP_FROM,
       to: `whatsapp:${formatted}`,
       body: message
-    });
+    };
+    if (mediaUrl) payload.mediaUrl = [mediaUrl];
+
+    const msg = await client.messages.create(payload);
     console.log(`✅ WhatsApp sent to ${formatted} | SID: ${msg.sid}`);
     return true;
   } catch (err) {
@@ -142,13 +145,13 @@ const sendSalaryWhatsApp = async (phone, empName, month, netSalary, slipNo) => {
 };
 
 // ── BROADCAST NOTIFICATION ────────────────────────────────────
-const sendBroadcastWhatsApp = async (phone, name, title, message) => {
+const sendBroadcastWhatsApp = async (phone, name, title, message, mediaUrl) => {
   const fullMessage =
     `🏫 *SchoolMS Announcement*\n\n` +
     `📢 *${title}*\n\n` +
     `${message}\n\n` +
     `_SchoolMS - School Management System_`;
-  return sendWhatsApp(phone, fullMessage);
+  return sendWhatsApp(phone, fullMessage, mediaUrl);
 };
 
 
