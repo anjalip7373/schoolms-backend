@@ -4,6 +4,13 @@ const pool = require('../config/db');
 const { sendBroadcastEmail } = require('../config/emailService');
 // const { sendWhatsAppMessage } = require('../config/whatsappService');
 
+const getTeacherClass = async (userId, role) => {
+  const isTeacher = String(role || '').toLowerCase() === 'teacher';
+  if (!isTeacher) return null;
+  const [rows] = await pool.execute('SELECT class_assigned FROM users WHERE id = ?', [userId]);
+  return rows[0]?.class_assigned || null;
+};
+
 
 exports.getBroadcasts = async (req, res) => {
   try {
@@ -20,10 +27,18 @@ exports.getBroadcasts = async (req, res) => {
 
 exports.sendBroadcast = async (req, res) => {
   try {
-    const { title, message, target_type, target_class_id } = req.body;
+    const { title, message } = req.body;
+    let { target_type, target_class_id } = req.body;
 
     if (!title || !message) {
       return res.status(400).json({ message: 'Title and message are required' });
+    }
+
+    // Teachers can only broadcast to their own assigned class
+    const teacherClass = await getTeacherClass(req.user.id, req.user.role);
+    if (teacherClass) {
+      target_type = 'class';
+      target_class_id = teacherClass;
     }
 
     // Media file detection
@@ -152,10 +167,18 @@ const sendBroadcastNotifications = async (recipients, title, message, senderName
 
 exports.sendWhatsAppBroadcast = async (req, res) => {
   try {
-    const { title, message, target_type, target_class_id } = req.body;
+    const { title, message } = req.body;
+    let { target_type, target_class_id } = req.body;
 
     if (!title || !message) {
       return res.status(400).json({ message: 'Title and message are required' });
+    }
+
+    // Teachers can only broadcast to their own assigned class
+    const teacherClass = await getTeacherClass(req.user.id, req.user.role);
+    if (teacherClass) {
+      target_type = 'class';
+      target_class_id = teacherClass;
     }
 
     // Media file detection
