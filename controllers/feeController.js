@@ -5,8 +5,10 @@ const { sendFeePaymentNotification } = require('../config/emailService');
 const pool = require('../config/db');
 
 const generateReceiptNo = async () => {
-  const [rows] = await pool.execute('SELECT COUNT(*) as cnt FROM fee_payments');
-  return `RCP${String(rows[0].cnt + 1).padStart(6,'0')}`;
+  const [rows] = await pool.execute(
+    "SELECT COALESCE(MAX(CAST(SUBSTRING(receipt_no, 4) AS UNSIGNED)), 0) AS maxNo FROM fee_payments"
+  );
+  return `RCP${String(rows[0].maxNo + 1).padStart(6, '0')}`;
 };
 
 exports.getFeePayments = async (req, res) => {
@@ -53,8 +55,17 @@ exports.getFeePayments = async (req, res) => {
 };
 
 exports.createFeePayment = async (req, res) => {
+  let conn;
   try {
-    const { student_id, payment_date, payment_month, payment_method, remarks } = req.body;
+    console.log('BODY:', req.body, 'USER:', req.user); // temporary debug line
+
+    const { student_id, payment_date, payment_method } = req.body;
+    const payment_month = req.body.payment_month ?? req.body.paymentMonth ?? null;
+    const remarks = req.body.remarks ?? null;
+
+    if (!student_id || !payment_date) {
+      return res.status(400).json({ message: 'student_id and payment_date are required' });
+    }
 
     // Accept multiple fee types (items), or fall back to the old single fee_type_id/amount shape
     let items = Array.isArray(req.body.items) ? req.body.items : null;
@@ -76,13 +87,29 @@ exports.createFeePayment = async (req, res) => {
     const receipt_no = await generateReceiptNo();
     const totalAmount = items.reduce((sum, it) => sum + parseFloat(it.amount || 0), 0);
 
+    // Insert all rows in one transaction (all saved, or none)
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
     for (const it of items) {
-      await pool.execute(
+      await conn.execute(
         `INSERT INTO fee_payments (receipt_no, student_id, fee_type_id, amount, payment_date, payment_month, payment_method, remarks, generated_by)
          VALUES (?,?,?,?,?,?,?,?,?)`,
-        [receipt_no, student_id, it.fee_type_id, it.amount, payment_date, payment_month, payment_method || 'Cash', remarks, req.user.id]
+        [
+          receipt_no,
+          student_id,
+          it.fee_type_id,
+          it.amount,
+          payment_date,
+          payment_month,
+          payment_method || 'Cash',
+          remarks,
+          req.user?.id ?? null
+        ]
       );
     }
+    await conn.commit();
+    conn.release();
+    conn = null;
 
     // Fetch student details for email/WhatsApp — sent once for the whole receipt
     try {
@@ -137,6 +164,9 @@ exports.createFeePayment = async (req, res) => {
 
     res.json({ message: 'Fee payment recorded', receipt_no, total_amount: totalAmount });
   } catch (err) {
+    if (conn) {
+      try { await conn.rollback(); conn.release(); } catch (_) {}
+    }
     console.error('Create fee payment error:', err);
     res.status(500).json({ message: err.message });
   }
