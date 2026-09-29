@@ -12,6 +12,37 @@ const configController = require('../controllers/configController');
 const dashboardController = require('../controllers/dashboardController');
 const marksController = require('../controllers/marksController');
 const broadcastController = require('../controllers/broadcastController');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const uploadsDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+const broadcastStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const broadcastUpload = multer({ storage: broadcastStorage, limits: { fileSize: 16 * 1024 * 1024 } });
+const uploadBroadcastMedia = (req, res, next) => {
+  broadcastUpload.single('media')(req, res, (err) => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ message: "File too large. Limits: images 4 MB, videos and other files 16 MB. Please choose a smaller file." });
+      }
+      return res.status(400).json({ message: err.message });
+    }
+    if (req.file && req.file.mimetype.startsWith('image/') && req.file.size > 4 * 1024 * 1024) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ message: "Image too large. Images can be up to 4 MB. Please choose a smaller image." });
+    }
+    next();
+  });
+};
 
 // Safe Callback Fallback Utility to prevent server crash if any function is undefined
 const safeCall = (cb) => {
@@ -118,8 +149,8 @@ router.post('/teacher-assigned-subjects', authenticateToken, safeCall(marksContr
 
 // Broadcasts
 router.get('/broadcasts', authenticateToken, safeCall(broadcastController.getBroadcasts));
-router.post('/broadcasts', authenticateToken, safeCall(broadcastController.sendBroadcast));
-router.post('/broadcasts/whatsapp', authenticateToken, safeCall(broadcastController.sendWhatsAppBroadcast));
+router.post('/broadcasts', authenticateToken, uploadBroadcastMedia, safeCall(broadcastController.sendBroadcast));
+router.post('/broadcasts/whatsapp', authenticateToken, uploadBroadcastMedia, safeCall(broadcastController.sendWhatsAppBroadcast));
 router.delete('/broadcasts/:id', authenticateToken, safeCall(broadcastController.deleteBroadcast));
 
 module.exports = router;
