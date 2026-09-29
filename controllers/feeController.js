@@ -54,7 +54,17 @@ exports.getFeePayments = async (req, res) => {
 
 exports.createFeePayment = async (req, res) => {
   try {
-    const { student_id, fee_type_id, amount, payment_date, payment_month, payment_method, remarks } = req.body;
+    const { student_id, payment_date, payment_month, payment_method, remarks } = req.body;
+
+    // Accept multiple fee types (items), or fall back to the old single fee_type_id/amount shape
+    let items = Array.isArray(req.body.items) ? req.body.items : null;
+    if (!items) {
+      items = [{ fee_type_id: req.body.fee_type_id, amount: req.body.amount }];
+    }
+    items = items.filter(it => it.fee_type_id && it.amount);
+    if (!items.length) {
+      return res.status(400).json({ message: 'Add at least one fee type with an amount' });
+    }
 
     // Guard: deactivated students cannot have fee payments recorded
     const [studentCheck] = await pool.execute('SELECT fee_status, full_name FROM students WHERE id = ?', [student_id]);
@@ -64,25 +74,31 @@ exports.createFeePayment = async (req, res) => {
     }
 
     const receipt_no = await generateReceiptNo();
+    const totalAmount = items.reduce((sum, it) => sum + parseFloat(it.amount || 0), 0);
 
-    await pool.execute(
-      `INSERT INTO fee_payments (receipt_no, student_id, fee_type_id, amount, payment_date, payment_month, payment_method, remarks, generated_by)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
-      [receipt_no, student_id, fee_type_id, amount, payment_date, payment_month, payment_method || 'Cash', remarks, req.user.id]
-    );
+    for (const it of items) {
+      await pool.execute(
+        `INSERT INTO fee_payments (receipt_no, student_id, fee_type_id, amount, payment_date, payment_month, payment_method, remarks, generated_by)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [receipt_no, student_id, it.fee_type_id, it.amount, payment_date, payment_month, payment_method || 'Cash', remarks, req.user.id]
+      );
+    }
 
-    // Fetch student and fee type details for email
-    // Send fee payment email with PDF
+    // Fetch student details for email/WhatsApp — sent once for the whole receipt
     try {
       const [studentRows] = await pool.execute(
-        `SELECT s.full_name, s.email, s.phone, s.roll_no,
-         c.name as class_name, ft.name as fee_type_name
+        `SELECT s.full_name, s.email, s.phone, s.roll_no, c.name as class_name
          FROM students s
          LEFT JOIN classes c ON s.class_id = c.id
-         LEFT JOIN fee_types ft ON ft.id = ?
          WHERE s.id = ?`,
-        [fee_type_id, student_id]
+        [student_id]
       );
+
+      const [feeTypeRows] = await pool.execute(
+        `SELECT name FROM fee_types WHERE id IN (${items.map(() => '?').join(',')})`,
+        items.map(it => it.fee_type_id)
+      );
+      const feeTypeLabel = feeTypeRows.map(f => f.name).join(', ') || `${items.length} fee type(s)`;
 
       if (studentRows.length && studentRows[0].email) {
         const s = studentRows[0];
@@ -91,8 +107,8 @@ exports.createFeePayment = async (req, res) => {
           full_name: s.full_name,
           roll_no: s.roll_no,
           class_name: s.class_name,
-          fee_type_name: s.fee_type_name,
-          amount,
+          fee_type_name: feeTypeLabel,
+          amount: totalAmount,
           payment_date,
           payment_month,
           payment_method: payment_method || 'Cash',
@@ -101,28 +117,25 @@ exports.createFeePayment = async (req, res) => {
         sendFeePaymentNotification(s.email, receiptData)
           .then(() => console.log('Fee receipt PDF email sent to:', s.email))
           .catch(e => console.error('Fee email failed:', e.message));
+      }
 
-        // ── Send WhatsApp notification ──
-       // Send WhatsApp
-      if (studentRows[0].phone) {
+      if (studentRows.length && studentRows[0].phone) {
         sendFeeWhatsApp(
           studentRows[0].phone,
           studentRows[0].full_name,
           studentRows[0].class_name,
           receipt_no,
-          amount,
-          studentRows[0].fee_type_name,
+          totalAmount,
+          feeTypeLabel,
           payment_date,
           payment_method || 'Cash'
         ).catch(e => console.error('Fee WhatsApp failed:', e.message));
       }
-      }
     } catch (emailErr) {
       console.error('Fee email error:', emailErr.message);
-    
     }
 
-    res.json({ message: 'Fee payment recorded', receipt_no });
+    res.json({ message: 'Fee payment recorded', receipt_no, total_amount: totalAmount });
   } catch (err) {
     console.error('Create fee payment error:', err);
     res.status(500).json({ message: err.message });
@@ -131,6 +144,9 @@ exports.createFeePayment = async (req, res) => {
 
 exports.getReceiptById = async (req, res) => {
   try {
+    const [baseRows] = await pool.execute(`SELECT receipt_no FROM fee_payments WHERE id = ?`, [req.params.id]);
+    if (!baseRows.length) return res.status(404).json({ message: 'Receipt not found' });
+
     const [rows] = await pool.execute(
       `SELECT fp.*, fp.payment_method, s.full_name, s.roll_no, s.phone, s.email, 
        c.name as class_name, ft.name as fee_type_name, u.full_name as generated_by_name
@@ -139,11 +155,16 @@ exports.getReceiptById = async (req, res) => {
        LEFT JOIN classes c ON s.class_id = c.id
        JOIN fee_types ft ON fp.fee_type_id = ft.id
        LEFT JOIN users u ON fp.generated_by = u.id
-       WHERE fp.id = ?`,
-      [req.params.id]
+       WHERE fp.receipt_no = ?
+       ORDER BY fp.id`,
+      [baseRows[0].receipt_no]
     );
     if (!rows.length) return res.status(404).json({ message: 'Receipt not found' });
-    res.json(rows[0]);
+
+    const total_amount = rows.reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
+    const items = rows.map(r => ({ fee_type_name: r.fee_type_name, amount: r.amount }));
+
+    res.json({ ...rows[0], items, total_amount });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
