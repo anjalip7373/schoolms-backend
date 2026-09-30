@@ -1,20 +1,50 @@
 const PDFDocument = require('pdfkit');
 require('dotenv').config();
 
-const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Brevo transactional email over HTTPS (works on Railway Free/Trial/Hobby, where SMTP is blocked)
+// Required env vars: BREVO_API_KEY, EMAIL_FROM (e.g. "SchoolMS <school@mntech.co.in>")
+const parseSender = (from) => {
+  const match = (from || '').match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+  if (match) return { name: match[1].trim() || 'SchoolMS', email: match[2].trim() };
+  return { name: 'SchoolMS', email: (from || '').trim() };
+};
 
 const sendEmail = async (mailOptions) => {
-  return resend.emails.send({
-    from: process.env.EMAIL_FROM || 'SchoolMS <onboarding@resend.dev>',
-    to: mailOptions.to,
+  if (!process.env.BREVO_API_KEY) throw new Error('BREVO_API_KEY is not set');
+  if (!process.env.EMAIL_FROM) throw new Error('EMAIL_FROM is not set');
+
+  const payload = {
+    sender: parseSender(process.env.EMAIL_FROM),
+    to: [{ email: mailOptions.to }],
     subject: mailOptions.subject,
-    html: mailOptions.html,
-    attachments: mailOptions.attachments?.map(a => ({
-      filename: a.filename,
-      content: a.content,
-    }))
+    htmlContent: mailOptions.html,
+  };
+
+  if (mailOptions.attachments?.length) {
+    payload.attachment = mailOptions.attachments.map(a => ({
+      name: a.filename,
+      content: Buffer.isBuffer(a.content)
+        ? a.content.toString('base64')
+        : Buffer.from(a.content).toString('base64'),
+    }));
+  }
+
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': process.env.BREVO_API_KEY,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
   });
+
+  if (!res.ok) {
+    const body = await res.text();
+    console.error(`Brevo send failed (${res.status}):`, body);
+    throw new Error(`Brevo error ${res.status}: ${body}`);
+  }
+  return res.json();
 };
 
 // HELPER LOGIC: STRICT INDIA LOCAL TIME CAPTURE OVERRIDE FOR CLOUD CHIPS
