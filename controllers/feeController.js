@@ -8,7 +8,7 @@ const generateReceiptNo = async () => {
   const [rows] = await pool.execute(
     "SELECT COALESCE(MAX(CAST(SUBSTRING(receipt_no, 4) AS UNSIGNED)), 0) AS maxNo FROM fee_payments"
   );
-  return `RCP${String(rows[0].maxNo + 1).padStart(6, '0')}`;
+  return `RCP${String(Number(rows[0].maxNo) + 1).padStart(6, '0')}`;
 };
 
 exports.getFeePayments = async (req, res) => {
