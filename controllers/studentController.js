@@ -57,7 +57,7 @@ exports.getAllStudents = async (req, res) => {
 
 exports.addStudent = async (req, res) => {
   try {
-    const { full_name, class_id, phone, whatsapp_no, email, date_of_birth, address } = req.body;
+    const { full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, gr_no, father_name, mother_name } = req.body;
 
     const validationErrors = validateStudentInput({ full_name, phone, whatsapp_no, email, date_of_birth, address });
     if (!class_id) validationErrors.push('Class is required');
@@ -84,9 +84,9 @@ exports.addStudent = async (req, res) => {
     const roll_no = await generateRollNo(finalClassId);
 
     await pool.execute(
-      `INSERT INTO students (roll_no, full_name, class_id, phone, whatsapp_no, email, date_of_birth, address) 
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [roll_no, full_name, finalClassId, phone, whatsapp_no, email, date_of_birth, address]
+       `INSERT INTO students (roll_no, full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, gr_no, father_name, mother_name)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [roll_no, full_name, finalClassId, phone, whatsapp_no, email, date_of_birth, address, gr_no || null, father_name || null, mother_name || null]
     );
 
     // Get class name for notification
@@ -113,7 +113,7 @@ exports.addStudent = async (req, res) => {
 exports.updateStudent = async (req, res) => {
   try {
     const { id } = req.params;
-    const { full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, fee_status } = req.body;
+    const { full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, fee_status, gr_no, father_name, mother_name } = req.body;
 
     const validationErrors = validateStudentInput({ full_name, phone, whatsapp_no, email, date_of_birth, address });
     if (!class_id) validationErrors.push('Class is required');
@@ -150,8 +150,8 @@ exports.updateStudent = async (req, res) => {
     }
 
     await pool.execute(
-      `UPDATE students SET full_name=?, class_id=?, phone=?, whatsapp_no=?, email=?, date_of_birth=?, address=?, fee_status=?, deactivated_date=? WHERE id=?`,
-      [full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, fee_status, deactivatedDate, id]
+      `UPDATE students SET full_name=?, class_id=?, phone=?, whatsapp_no=?, email=?, date_of_birth=?, address=?, fee_status=?, deactivated_date=?, gr_no=COALESCE(?, gr_no), father_name=COALESCE(?, father_name), mother_name=COALESCE(?, mother_name) WHERE id=?`,
+      [full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, fee_status, deactivatedDate, gr_no || null, father_name || null, mother_name || null, id]
     );
 
     const statusChanged = previousStatus !== fee_status;
