@@ -473,7 +473,37 @@ const sendStudentUpdateEmail = async (toEmail, studentName) => {
   });
 };
 
+// ─── ACTIVATE / DEACTIVATE STATUS EMAIL (STUDENT + EMPLOYEE) ───
+const sendStatusChangeEmail = async (toEmail, personName, personType, isActive) => {
+  if (!toEmail) return;
+  const isEmployee = personType === 'employee';
+  const statusText = isActive ? 'Activated' : 'Deactivated';
+  const headerColor = isActive
+    ? 'linear-gradient(135deg,#059669,#10b981)'
+    : 'linear-gradient(135deg,#dc2626,#ef4444)';
+  return sendEmail({
+    to: toEmail,
+    subject: `SchoolMS — Your Account Has Been ${statusText}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;">
+        <div style="background:${headerColor};padding:28px;text-align:center;color:#fff;">
+          <h1 style="margin:0;font-size:22px;font-weight:800;">🏫 SchoolMS</h1>
+          <p style="margin:4px 0 0;opacity:0.8;font-size:13px;">Account ${statusText}</p>
+        </div>
+        <div style="padding:28px;">
+          <p>Dear <strong>${personName}</strong>,</p>
+          <p style="color:#64748b;">Your ${isEmployee ? 'staff' : 'student'} account has been <strong>${statusText.toLowerCase()}</strong>.</p>
+          <p style="color:#64748b;">Time: <strong>${getIndiaDateTimeString()}</strong></p>
+          <p style="color:#64748b;font-size:13px;">${isActive
+            ? 'You can now access SchoolMS services again.'
+            : `Please contact the ${isEmployee ? 'school administrator' : 'school'} for more information.`}</p>
+        </div>
+      </div>`
+  });
+};
+
 module.exports = {
+  sendStatusChangeEmail,
   sendPasswordResetEmail,
   sendPasswordChangedEmail,
   sendAttendanceNotification,

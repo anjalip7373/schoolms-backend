@@ -1,6 +1,6 @@
 const pool = require('../config/db');
-const { sendStudentWelcomeEmail, sendStudentUpdateEmail } = require('../config/emailService');
-const { sendStudentWelcomeWhatsApp, sendStudentUpdateWhatsApp } = require('../config/whatsappService');
+const { sendStudentWelcomeEmail, sendStudentUpdateEmail, sendStatusChangeEmail } = require('../config/emailService');
+const { sendStudentWelcomeWhatsApp, sendStudentUpdateWhatsApp, sendStatusChangeWhatsApp } = require('../config/whatsappService');
 
 const generateRollNo = async (class_id) => {
   const [rows] = await pool.execute('SELECT COUNT(*) as cnt FROM students WHERE class_id = ?', [class_id]);
@@ -154,9 +154,18 @@ exports.updateStudent = async (req, res) => {
       [full_name, class_id, phone, whatsapp_no, email, date_of_birth, address, fee_status, deactivatedDate, id]
     );
 
-    if (email) sendStudentUpdateEmail(email, full_name).catch(e => console.error('Student update email failed:', e.message));
+    const statusChanged = previousStatus !== fee_status;
     const waPhone = whatsapp_no || phone;
-    if (waPhone) sendStudentUpdateWhatsApp(waPhone, full_name).catch(e => console.error('Student update WhatsApp failed:', e.message));
+
+    if (statusChanged) {
+      // ✅ Status changed: send activate/deactivate notice instead of the generic "profile updated" one
+      const isActive = fee_status === 'active';
+      if (email) sendStatusChangeEmail(email, full_name, 'student', isActive).catch(e => console.error('Student status email failed:', e.message));
+      if (waPhone) sendStatusChangeWhatsApp(waPhone, full_name, 'student', isActive).catch(e => console.error('Student status WhatsApp failed:', e.message));
+    } else {
+      if (email) sendStudentUpdateEmail(email, full_name).catch(e => console.error('Student update email failed:', e.message));
+      if (waPhone) sendStudentUpdateWhatsApp(waPhone, full_name).catch(e => console.error('Student update WhatsApp failed:', e.message));
+    }
 
     res.json({ message: 'Student updated successfully' });
   } catch (err) { res.status(500).json({ message: err.message }); }

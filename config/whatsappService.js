@@ -209,8 +209,26 @@ const sendStudentUpdateWhatsApp = async (phone, studentName) => {
   return sendWhatsApp(phone, message);
 };
 
+// ─── ACTIVATE / DEACTIVATE STATUS WHATSAPP (STUDENT + EMPLOYEE) ───
+const sendStatusChangeWhatsApp = async (phone, personName, personType, isActive) => {
+  const isEmployee = personType === 'employee';
+  const statusText = isActive ? 'ACTIVATED' : 'DEACTIVATED';
+  const emoji = isActive ? '🟢' : '🔴';
+  const message =
+    `🏫 *SchoolMS - Account ${isActive ? 'Activated' : 'Deactivated'}*\n\n` +
+    `Dear *${personName}*,\n\n` +
+    `${emoji} Your ${isEmployee ? 'staff' : 'student'} account has been *${statusText}*.\n\n` +
+    `🕐 Time: *${getIndiaDateTimeString()}*\n\n` +
+    (isActive
+      ? `You can now access SchoolMS services again.\n\n`
+      : `⚠️ Please contact the ${isEmployee ? 'school administrator' : 'school'} for more information.\n\n`) +
+    `_SchoolMS - School Management System_`;
+  return sendWhatsApp(phone, message);
+};
+
 module.exports = {
   sendWhatsApp,
+  sendStatusChangeWhatsApp,
   sendPasswordResetWhatsApp,
   sendPasswordChangedWhatsApp,
   sendAttendanceWhatsApp,

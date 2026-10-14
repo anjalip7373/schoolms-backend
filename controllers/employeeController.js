@@ -1,7 +1,7 @@
 const pool = require('../config/db');
 const bcrypt = require('bcryptjs');
-const { sendEmployeeWelcomeEmail, sendEmployeeUpdateEmail } = require('../config/emailService');
-const { sendEmployeeWelcomeWhatsApp, sendEmployeeUpdateWhatsApp } = require('../config/whatsappService');
+const { sendEmployeeWelcomeEmail, sendEmployeeUpdateEmail, sendStatusChangeEmail } = require('../config/emailService');
+const { sendEmployeeWelcomeWhatsApp, sendEmployeeUpdateWhatsApp, sendStatusChangeWhatsApp } = require('../config/whatsappService');
 
 const generateEmpId = async () => {
   const [rows] = await pool.execute('SELECT COUNT(*) as cnt FROM users');
@@ -181,7 +181,7 @@ exports.getEmployeeById = async (req, res) => {
 exports.toggleEmployeeStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const [rows] = await pool.execute('SELECT is_active, login_user_id FROM users WHERE id = ?', [id]);
+    const [rows] = await pool.execute('SELECT is_active, login_user_id, full_name, phone, email FROM users WHERE id = ?', [id]);
     if (!rows.length) return res.status(404).json({ message: 'Employee not found' });
     if (rows[0].login_user_id === 'admin') return res.status(403).json({ message: 'Cannot deactivate admin' });
     const newStatus = rows[0].is_active ? 0 : 1;
@@ -190,6 +190,18 @@ exports.toggleEmployeeStatus = async (req, res) => {
       'UPDATE users SET is_active = ?, deactivated_date = ? WHERE id = ?',
       [newStatus, newStatus ? null : new Date().toISOString().split('T')[0], id]
     );
+
+    // ✅ Send activate/deactivate email
+    if (rows[0].email) {
+      sendStatusChangeEmail(rows[0].email, rows[0].full_name, 'employee', !!newStatus)
+        .catch(e => console.error('Employee status email failed:', e.message));
+    }
+
+    // ✅ Send activate/deactivate WhatsApp
+    if (rows[0].phone) {
+      sendStatusChangeWhatsApp(rows[0].phone, rows[0].full_name, 'employee', !!newStatus)
+        .catch(e => console.error('Employee status WhatsApp failed:', e.message));
+    }
 
     res.json({ message: newStatus ? 'Employee activated' : 'Employee deactivated' });
   } catch (err) { res.status(500).json({ message: err.message }); }
