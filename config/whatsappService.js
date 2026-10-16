@@ -118,7 +118,7 @@ const sendFeeWhatsApp = async (phone, studentName, className, receiptNo, amount,
     `👤 *Student:* ${studentName}\n` +
     `🏫 *Class:* ${className}\n` +
     `📚 *Fee Type:* ${feeType}\n` +
-    `💵 *Amount:* Rs. ${parseFloat(amount || 0).toLocaleString('en-IN')}\n` +
+    `💵 *Amount:* ₹${parseFloat(amount || 0).toLocaleString('en-IN')}\n` +
     `💳 *Method:* ${paymentMethod || 'Cash'}\n` +
     `📅 *Date:* ${date}\n\n` +
     `_SchoolMS - School Management System_`;
@@ -138,7 +138,7 @@ const sendSalaryWhatsApp = async (phone, empName, month, netSalary, slipNo) => {
     `Salary slip for *${monthLabel}* is ready!\n\n` +
     `👤 Employee: *${empName}*\n` +
     `📅 Month: *${monthLabel}*\n` +
-    `💰 Net Salary: *Rs. ${parseFloat(netSalary || 0).toLocaleString('en-IN')}*\n\n` +
+    `💰 Net Salary: *₹${parseFloat(netSalary || 0).toLocaleString('en-IN')}*\n\n` +
     `Please check your email for the PDF salary slip.\n\n` +
     `_SchoolMS - School Management System_`;
   return sendWhatsApp(phone, message);

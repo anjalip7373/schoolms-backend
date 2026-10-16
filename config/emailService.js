@@ -1,4 +1,5 @@
 const PDFDocument = require('pdfkit');
+const { registerFonts } = require('./pdfFonts');
 require('dotenv').config();
 
 // Brevo transactional email over HTTPS (works on Railway Free/Trial/Hobby, where SMTP is blocked)
@@ -59,16 +60,17 @@ const getIndiaDateTimeString = () => {
 const generateFeeReceiptPDFBuffer = (receipt) => {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A5', margin: 40 });
+    registerFonts(doc);
     const buffers = [];
     doc.on('data', chunk => buffers.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
     doc.on('error', reject);
     doc.rect(0, 0, doc.page.width, 80).fill('#1e40af');
-    doc.fillColor('white').fontSize(18).font('Helvetica-Bold').text('SchoolMS', 40, 20);
-    doc.fontSize(10).font('Helvetica').text('Fee Payment Receipt', 40, 44);
+    doc.fillColor('white').fontSize(18).font('NotoSans-Bold').text('SchoolMS', 40, 20);
+    doc.fontSize(10).font('NotoSans').text('Fee Payment Receipt', 40, 44);
     doc.fontSize(9).text(`Receipt No: ${receipt.receipt_no}`, 40, 58);
     doc.text(`Date: ${receipt.payment_date?.split('T')[0] || ''}`, 40, 70);
-    doc.fillColor('#1e293b').fontSize(11).font('Helvetica-Bold').text('Payment Details', 40, 100);
+    doc.fillColor('#1e293b').fontSize(11).font('NotoSans-Bold').text('Payment Details', 40, 100);
     const rows = [
       ['Student Name', receipt.full_name || '—'],
       ['Roll No', receipt.roll_no || '—'],
@@ -81,15 +83,15 @@ const generateFeeReceiptPDFBuffer = (receipt) => {
     let y = 118;
     rows.forEach(([label, value], i) => {
       if (i % 2 === 0) doc.rect(40, y, doc.page.width - 80, 22).fill('#f8fafc');
-      doc.fillColor('#64748b').fontSize(9).font('Helvetica-Bold').text(label, 48, y + 6, { width: 120 });
-      doc.fillColor('#1e293b').font('Helvetica').text(String(value), 175, y + 6, { width: 160 });
+      doc.fillColor('#64748b').fontSize(9).font('NotoSans-Bold').text(label, 48, y + 6, { width: 120 });
+      doc.fillColor('#1e293b').font('NotoSans').text(String(value), 175, y + 6, { width: 160 });
       y += 22;
     });
     y += 10;
     doc.rect(40, y, doc.page.width - 80, 50).fill('#f0fdf4').stroke('#16a34a');
-    doc.fillColor('#16a34a').fontSize(16).font('Helvetica-Bold')
-      .text(`Rs. ${parseFloat(receipt.amount || 0).toLocaleString('en-IN')}`, 40, y + 10, { align: 'center', width: doc.page.width - 80 });
-    doc.fontSize(9).font('Helvetica').fillColor('#64748b')
+    doc.fillColor('#16a34a').fontSize(16).font('NotoSans-Bold')
+      .text(`₹${parseFloat(receipt.amount || 0).toLocaleString('en-IN')}`, 40, y + 10, { align: 'center', width: doc.page.width - 80 });
+    doc.fontSize(9).font('NotoSans').fillColor('#64748b')
       .text('Amount Received', 40, y + 32, { align: 'center', width: doc.page.width - 80 });
     y += 70;
     doc.fillColor('#94a3b8').fontSize(8)
@@ -102,6 +104,7 @@ const generateFeeReceiptPDFBuffer = (receipt) => {
 const generateSalarySlipPDFBuffer = (slip) => {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A5', margin: 40 });
+    registerFonts(doc);
     const buffers = [];
     doc.on('data', chunk => buffers.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(buffers)));
@@ -112,11 +115,11 @@ const generateSalarySlipPDFBuffer = (slip) => {
       return `${monthNames[parseInt(parts[1]) - 1]} ${parts[0]}`;
     })() : slip.month;
     doc.rect(0, 0, doc.page.width, 80).fill('#1e40af');
-    doc.fillColor('white').fontSize(18).font('Helvetica-Bold').text('SchoolMS', 40, 20);
-    doc.fontSize(10).font('Helvetica').text('Salary Slip', 40, 44);
+    doc.fillColor('white').fontSize(18).font('NotoSans-Bold').text('SchoolMS', 40, 20);
+    doc.fontSize(10).font('NotoSans').text('Salary Slip', 40, 44);
     doc.fontSize(9).text(`Slip No: ${slip.slip_no}`, 40, 58);
     doc.text(`Month: ${monthLabel}`, 40, 70);
-    doc.fillColor('#1e293b').fontSize(11).font('Helvetica-Bold').text('Employee Details', 40, 100);
+    doc.fillColor('#1e293b').fontSize(11).font('NotoSans-Bold').text('Employee Details', 40, 100);
     const empRows = [
       ['Employee Name', slip.full_name || '—'],
       ['Employee ID', slip.emp_id || '—'],
@@ -126,29 +129,29 @@ const generateSalarySlipPDFBuffer = (slip) => {
     let y = 118;
     empRows.forEach(([label, value], i) => {
       if (i % 2 === 0) doc.rect(40, y, doc.page.width - 80, 22).fill('#f8fafc');
-      doc.fillColor('#64748b').fontSize(9).font('Helvetica-Bold').text(label, 48, y + 6, { width: 120 });
-      doc.fillColor('#1e293b').font('Helvetica').text(String(value), 175, y + 6, { width: 160 });
+      doc.fillColor('#64748b').fontSize(9).font('NotoSans-Bold').text(label, 48, y + 6, { width: 120 });
+      doc.fillColor('#1e293b').font('NotoSans').text(String(value), 175, y + 6, { width: 160 });
       y += 22;
     });
     y += 12;
-    doc.fillColor('#1e293b').fontSize(11).font('Helvetica-Bold').text('Salary Breakdown', 40, y);
+    doc.fillColor('#1e293b').fontSize(11).font('NotoSans-Bold').text('Salary Breakdown', 40, y);
     y += 18;
     doc.rect(40, y, doc.page.width - 80, 22).fill('#1e40af');
-    doc.fillColor('white').fontSize(9).font('Helvetica-Bold')
+    doc.fillColor('white').fontSize(9).font('NotoSans-Bold')
       .text('Component', 48, y + 6, { width: 120 })
       .text('Amount', 175, y + 6, { width: 140, align: 'right' });
     y += 22;
     const salaryRows = [
-      ['Basic Salary', `Rs. ${parseFloat(slip.basic_salary || 0).toLocaleString('en-IN')}`],
-      ['Deductions', `- Rs. ${parseFloat(slip.deductions || 0).toLocaleString('en-IN')}`],
-      ['Net Salary', `Rs. ${parseFloat(slip.net_salary || 0).toLocaleString('en-IN')}`],
+      ['Basic Salary', `₹${parseFloat(slip.basic_salary || 0).toLocaleString('en-IN')}`],
+      ['Deductions', `- ₹${parseFloat(slip.deductions || 0).toLocaleString('en-IN')}`],
+      ['Net Salary', `₹${parseFloat(slip.net_salary || 0).toLocaleString('en-IN')}`],
     ];
     salaryRows.forEach(([label, value], i) => {
       const isNet = i === 2;
       doc.rect(40, y, doc.page.width - 80, 24).fill(isNet ? '#f0fdf4' : (i % 2 === 0 ? '#f8fafc' : 'white'));
       doc.fillColor(isNet ? '#16a34a' : '#1e293b')
         .fontSize(isNet ? 10 : 9)
-        .font(isNet ? 'Helvetica-Bold' : 'Helvetica')
+        .font(isNet ? 'NotoSans-Bold' : 'NotoSans')
         .text(label, 48, y + 7, { width: 120 })
         .text(value, 175, y + 7, { width: 140, align: 'right' });
       y += 24;
@@ -160,10 +163,10 @@ const generateSalarySlipPDFBuffer = (slip) => {
       .stroke(isPaid ? '#16a34a' : '#f59e0b');
     const statusLabel = slip.status === 'paid' ? 'DEPOSITED' : 'GENERATED';
     doc.fillColor(isPaid ? '#16a34a' : '#d97706')
-      .fontSize(10).font('Helvetica-Bold')
+      .fontSize(10).font('NotoSans-Bold')
       .text(`Status: ${statusLabel}`, 40, y + 9, { align: 'center', width: doc.page.width - 80 });
     y += 45;
-    doc.fillColor('#94a3b8').fontSize(8).font('Helvetica')
+    doc.fillColor('#94a3b8').fontSize(8).font('NotoSans')
       .text('Generated by SchoolMS • Computer Generated Document', 40, y, { align: 'center', width: doc.page.width - 80 });
     doc.end();
   });
@@ -306,7 +309,7 @@ const sendFeePaymentNotification = async (toEmail, receipt) => {
             <p>Dear <strong>Parent/Guardian</strong>,</p>
             <p style="color:#64748b;">Fee payment received. Receipt attached.</p>
             <div style="text-align:center;margin:20px 0;">
-              <div style="font-size:36px;font-weight:900;color:#16a34a;">Rs. ${parseFloat(receipt.amount || 0).toLocaleString('en-IN')}</div>
+              <div style="font-size:36px;font-weight:900;color:#16a34a;">₹${parseFloat(receipt.amount || 0).toLocaleString('en-IN')}</div>
             </div>
             <table style="width:100%;border-collapse:collapse;">
               <tr><td style="padding:8px;color:#94a3b8;font-weight:bold;">Student</td><td style="padding:8px;">${receipt.full_name}</td></tr>
@@ -346,7 +349,7 @@ const sendSalarySlipNotification = async (toEmail, slip) => {
             <p>Dear <strong>${slip.full_name}</strong>,</p>
             <p style="color:#64748b;">Your salary slip for <strong>${monthLabel}</strong> is attached.</p>
             <div style="text-align:center;margin:20px 0;">
-              <div style="font-size:36px;font-weight:900;color:#16a34a;">Rs. ${parseFloat(slip.net_salary || 0).toLocaleString('en-IN')}</div>
+              <div style="font-size:36px;font-weight:900;color:#16a34a;">₹${parseFloat(slip.net_salary || 0).toLocaleString('en-IN')}</div>
               <div style="font-size:12px;color:#64748b;">Net Salary</div>
             </div>
           </div>
