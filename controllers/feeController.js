@@ -4,11 +4,35 @@ const { sendFeePaymentNotification } = require('../config/emailService');
 
 const pool = require('../config/db');
 
-const generateReceiptNo = async () => {
-  const [rows] = await pool.execute(
-    "SELECT COALESCE(MAX(CAST(SUBSTRING(receipt_no, 4) AS UNSIGNED)), 0) AS maxNo FROM fee_payments"
+// Receipt number prefix per level: PP = Pre-Primary, UP = Primary, SC = Secondary
+const LEVEL_PREFIX = { 'Pre-Primary': 'PP', Primary: 'UP', Secondary: 'SC' };
+
+// same logic as levelOfClass in Fees.js
+const levelOfClass = (name) => {
+  const n = String(name || '').toLowerCase();
+  if (/nursery|play\s*group|pre[- ]?primary|kindergarten|\b[lu]\.?\s*kg\b|\bjr\.?\s*kg\b|\bsr\.?\s*kg\b|junior\s*kg|senior\s*kg|\bkg\b/.test(n)) return 'Pre-Primary';
+  const m = n.match(/(\d+)/);
+  if (!m) return '';
+  const num = parseInt(m[1], 10);
+  if (num >= 1 && num <= 8) return 'Primary';
+  if (num >= 9) return 'Secondary';
+  return '';
+};
+
+// Each level has its own 5 digit counter: PP00001, UP00001, SC00001
+const generateReceiptNo = async (studentId) => {
+  const [clsRows] = await pool.execute(
+    `SELECT c.name FROM students s LEFT JOIN classes c ON s.class_id = c.id WHERE s.id = ?`,
+    [studentId]
   );
-  return `RCP${String(Number(rows[0].maxNo) + 1).padStart(6, '0')}`;
+  const prefix = LEVEL_PREFIX[levelOfClass(clsRows[0]?.name)] || 'RC'; // RC = fallback for unrecognised class names
+
+  const [rows] = await pool.execute(
+    `SELECT COALESCE(MAX(CAST(SUBSTRING(receipt_no, 3) AS UNSIGNED)), 0) AS last_no
+     FROM fee_payments WHERE receipt_no REGEXP ?`,
+    [`^${prefix}[0-9]+$`]
+  );
+  return `${prefix}${String(Number(rows[0].last_no) + 1).padStart(5, '0')}`;
 };
 
 exports.getFeePayments = async (req, res) => {
@@ -84,7 +108,7 @@ exports.createFeePayment = async (req, res) => {
       return res.status(403).json({ message: `${studentCheck[0].full_name} is deactivated and cannot receive fee payments` });
     }
 
-    const receipt_no = await generateReceiptNo();
+    const receipt_no = await generateReceiptNo(student_id);
     const totalAmount = items.reduce((sum, it) => sum + parseFloat(it.amount || 0), 0);
 
        // Insert all rows in one transaction (all saved, or none)
@@ -179,7 +203,7 @@ exports.getReceiptById = async (req, res) => {
 
     const [rows] = await pool.execute(
       `SELECT fp.*, fp.payment_method, s.full_name, s.roll_no, s.phone, s.email, 
-       c.name as class_name, ft.name as fee_type_name, u.full_name as generated_by_name
+       s.class_id, c.name as class_name, ft.name as fee_type_name, u.full_name as generated_by_name
        FROM fee_payments fp 
        JOIN students s ON fp.student_id = s.id
        LEFT JOIN classes c ON s.class_id = c.id
@@ -192,7 +216,7 @@ exports.getReceiptById = async (req, res) => {
     if (!rows.length) return res.status(404).json({ message: 'Receipt not found' });
 
     const total_amount = rows.reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
-    const items = rows.map(r => ({ fee_type_name: r.fee_type_name, amount: r.amount }));
+    const items = rows.map(r => ({ fee_type_id: r.fee_type_id, fee_type_name: r.fee_type_name, amount: r.amount }));
 
     res.json({ ...rows[0], items, total_amount });
   } catch (err) { res.status(500).json({ message: err.message }); }
@@ -398,5 +422,54 @@ exports.getAllStudentsWithFeeStatus = async (req, res) => {
   } catch (err) {
     console.error('Fee status error:', err.message);
     res.status(500).json({ message: err.message });
+  }
+};
+
+// Admin / Principal only: edit a receipt (fee items, amounts, method, date, month, remarks).
+// The receipt number, student and class stay the same.
+exports.updateFeePaymentByReceipt = async (req, res) => {
+  const role = String(req.user?.role || '').trim().toLowerCase();
+  if (!['admin', 'principal'].includes(role)) {
+    return res.status(403).json({ message: 'Only admin or principal can edit fee payments.' });
+  }
+  let conn;
+  try {
+    const receipt_no = req.params.receipt_no;
+    const { payment_date, payment_month, payment_method, remarks } = req.body;
+
+    const items = (Array.isArray(req.body.items) ? req.body.items : []).filter(it => it.fee_type_id && it.amount);
+    if (!items.length) return res.status(400).json({ message: 'Add at least one fee type with an amount' });
+    if (items.some(it => isNaN(parseFloat(it.amount)) || parseFloat(it.amount) <= 0)) {
+      return res.status(400).json({ message: 'Every amount must be greater than 0' });
+    }
+
+    const [existing] = await pool.execute(
+      'SELECT student_id, generated_by FROM fee_payments WHERE receipt_no = ? LIMIT 1', [receipt_no]
+    );
+    if (!existing.length) return res.status(404).json({ message: 'Receipt not found' });
+
+    const dateVal = payment_date || new Date().toISOString().split('T')[0];
+    const monthVal = payment_month || dateVal.substring(0, 7);
+    const totalAmount = items.reduce((sum, it) => sum + parseFloat(it.amount || 0), 0);
+
+    // Replace all rows of this receipt in one transaction (all updated, or none)
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    await conn.execute('DELETE FROM fee_payments WHERE receipt_no = ?', [receipt_no]);
+    for (const it of items) {
+      await conn.execute(
+        `INSERT INTO fee_payments (receipt_no, student_id, fee_type_id, amount, payment_date, payment_month, payment_method, remarks, generated_by)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [receipt_no, existing[0].student_id, it.fee_type_id, it.amount, dateVal, monthVal, payment_method || 'Cash', remarks || null, existing[0].generated_by]
+      );
+    }
+    await conn.commit();
+
+    res.json({ message: 'Fee payment updated', receipt_no, total_amount: totalAmount });
+  } catch (err) {
+    if (conn) { try { await conn.rollback(); } catch (e) {} }
+    res.status(500).json({ message: err.message });
+  } finally {
+    if (conn) conn.release();
   }
 };

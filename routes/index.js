@@ -82,6 +82,7 @@ router.get('/fees/dashboard-stats', authenticateToken, safeCall(feeController.ge
 router.post('/fees', authenticateToken, safeCall(feeController.createFeePayment));
 router.get('/fees/receipt/:id', authenticateToken, safeCall(feeController.getReceiptById));
 router.get('/fees/audit', authenticateToken, requireRole('admin'), safeCall(feeController.getFeeAudit));
+router.put('/fees/receipt-no/:receipt_no', authenticateToken, safeCall(feeController.updateFeePaymentByReceipt));
 
 // Salary
 router.get('/salary', authenticateToken, safeCall(salaryController.getSalarySlips));
