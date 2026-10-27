@@ -48,7 +48,7 @@ exports.getFeePayments = async (req, res) => {
     }
 
     let query = `SELECT fp.*, fp.remarks, fp.receipt_no, s.full_name, s.roll_no, 
-                 c.name as class_name, ft.name as fee_type_name, s.phone
+                 c.name as class_name, ft.name as fee_type_name, s.phone, s.whatsapp
                  FROM fee_payments fp 
                  JOIN students s ON fp.student_id = s.id
                  LEFT JOIN classes c ON s.class_id = c.id
@@ -138,7 +138,7 @@ exports.createFeePayment = async (req, res) => {
     // Fetch student details for email/WhatsApp — sent once for the whole receipt
     try {
       const [studentRows] = await pool.execute(
-        `SELECT s.full_name, s.email, s.phone, s.roll_no, c.name as class_name
+        `SELECT s.full_name, s.email, s.phone, s.whatsapp, s.roll_no, c.name as class_name
          FROM students s
          LEFT JOIN classes c ON s.class_id = c.id
          WHERE s.id = ?`,
@@ -170,9 +170,9 @@ exports.createFeePayment = async (req, res) => {
           .catch(e => console.error('Fee email failed:', e.message));
       }
 
-      if (studentRows.length && studentRows[0].phone) {
+      if (studentRows.length && studentRows[0].whatsapp) {
         sendFeeWhatsApp(
-          studentRows[0].phone,
+          studentRows[0].whatsapp,
           studentRows[0].full_name,
           studentRows[0].class_name,
           receipt_no,
@@ -202,7 +202,7 @@ exports.getReceiptById = async (req, res) => {
     if (!baseRows.length) return res.status(404).json({ message: 'Receipt not found' });
 
     const [rows] = await pool.execute(
-      `SELECT fp.*, fp.payment_method, s.full_name, s.roll_no, s.phone, s.email, 
+      `SELECT fp.*, fp.payment_method, s.full_name,  s.roll_no, s.phone, s.whatsapp, s.email,
        s.class_id, c.name as class_name, ft.name as fee_type_name, u.full_name as generated_by_name
        FROM fee_payments fp 
        JOIN students s ON fp.student_id = s.id
