@@ -36,6 +36,19 @@ pool.execute(`
   console.log('CRITICAL LOG: exam_subject_config matrix engine running clean with structural text mappings!');
 }).catch(err => console.error('Database configuration load error:', err.message));
 
+// ─── SCHOOL PROFILE TABLE (additive) ───
+pool.execute(`
+  CREATE TABLE IF NOT EXISTS school_settings (
+    id INT PRIMARY KEY DEFAULT 1,
+    school_name VARCHAR(255) NOT NULL DEFAULT 'My School',
+    address VARCHAR(500) DEFAULT '',
+    academic_year VARCHAR(20) DEFAULT '',
+    reopen_date DATE NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  )
+`).then(() => pool.execute(`INSERT IGNORE INTO school_settings (id, school_name) VALUES (1, 'My School')`))
+  .catch(err => console.log('school_settings init notice:', err.message));
+
 // Classes Management - Fully Intact
 exports.getClasses = async (req, res) => {
   try {
@@ -201,4 +214,40 @@ exports.deleteExamSetting = async (req, res) => {
     await pool.execute('DELETE FROM exam_subject_config WHERE id = ?', [req.params.id]);
     res.json({ message: 'Exam configuration deleted successfully!' });
   } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
+// ─── SCHOOL SETTINGS ───
+exports.getSchoolSettings = async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT school_name, address, academic_year,
+              DATE_FORMAT(reopen_date, '%Y-%m-%d') AS reopen_date
+       FROM school_settings WHERE id = 1`
+    );
+    res.json(rows[0] || { school_name: '', address: '', academic_year: '', reopen_date: null });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.saveSchoolSettings = async (req, res) => {
+  try {
+    const { school_name, address, academic_year, reopen_date } = req.body;
+    if (!school_name || !school_name.trim()) {
+      return res.status(400).json({ message: 'School name is required' });
+    }
+    await pool.execute(
+      `INSERT INTO school_settings (id, school_name, address, academic_year, reopen_date)
+       VALUES (1, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         school_name = VALUES(school_name),
+         address = VALUES(address),
+         academic_year = VALUES(academic_year),
+         reopen_date = VALUES(reopen_date)`,
+      [school_name.trim(), address || '', academic_year || '', reopen_date || null]
+    );
+    res.json({ message: 'School settings updated successfully' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 };

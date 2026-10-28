@@ -12,6 +12,8 @@ const configController = require('../controllers/configController');
 const dashboardController = require('../controllers/dashboardController');
 const marksController = require('../controllers/marksController');
 const broadcastController = require('../controllers/broadcastController');
+const teacherAssignmentController = require('../controllers/teacherAssignmentController');
+const teacherScope = require('../middleware/teacherScope');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -110,6 +112,10 @@ router.post('/config/fee-types', authenticateToken, requireRole('admin'), safeCa
 router.put('/config/fee-types/:id', authenticateToken, requireRole('admin'), safeCall(configController.updateFeeType));
 router.delete('/config/fee-types/:id', authenticateToken, requireRole('admin'), safeCall(configController.deleteFeeType));
 
+// School Settings
+router.get('/config/school-settings', authenticateToken, safeCall(configController.getSchoolSettings));
+router.put('/config/school-settings', authenticateToken, requireRole('admin'), safeCall(configController.saveSchoolSettings));
+
 // Roles Management
 router.get('/config/roles', authenticateToken, safeCall(configController.getRoles));
 router.post('/config/roles', authenticateToken, requireRole('admin'), safeCall(configController.addRole));
@@ -153,5 +159,14 @@ router.get('/broadcasts', authenticateToken, safeCall(broadcastController.getBro
 router.post('/broadcasts', authenticateToken, uploadBroadcastMedia, safeCall(broadcastController.sendBroadcast));
 router.post('/broadcasts/whatsapp', authenticateToken, uploadBroadcastMedia, safeCall(broadcastController.sendWhatsAppBroadcast));
 router.delete('/broadcasts/:id', authenticateToken, safeCall(broadcastController.deleteBroadcast));
+
+// Teacher → Class → Subject assignments
+router.get('/config/teacher-assignments', authenticateToken, requireRole('admin'), safeCall(teacherAssignmentController.getTeacherAssignments));
+router.post('/config/teacher-assignments', authenticateToken, requireRole('admin'), safeCall(teacherAssignmentController.addTeacherAssignment));
+router.delete('/config/teacher-assignments/:id', authenticateToken, requireRole('admin'), safeCall(teacherAssignmentController.removeTeacherAssignment));
+router.get('/my-classes', authenticateToken, teacherScope, safeCall(teacherAssignmentController.getMyClasses));
+router.get('/my-subjects', authenticateToken, teacherScope, safeCall(teacherAssignmentController.getMySubjects));
+router.get('/my-broadcast-classes', authenticateToken, teacherScope, safeCall(teacherAssignmentController.getMyBroadcastClasses));
+router.get('/my-broadcast-subjects', authenticateToken, teacherScope, safeCall(teacherAssignmentController.getMyBroadcastSubjects));
 
 module.exports = router;
