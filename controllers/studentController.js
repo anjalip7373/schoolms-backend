@@ -3,9 +3,27 @@ const { sendStudentWelcomeEmail, sendStudentUpdateEmail, sendStatusChangeEmail }
 const { sendStudentWelcomeWhatsApp, sendStudentUpdateWhatsApp, sendStatusChangeWhatsApp } = require('../config/whatsappService');
 
 const generateRollNo = async (class_id) => {
-  const [rows] = await pool.execute('SELECT COUNT(*) as cnt FROM students WHERE class_id = ?', [class_id]);
-  const count = rows[0].cnt + 1;
-  return `STU${class_id}${String(count).padStart(3,'0')}`;
+  // Get the class name, e.g. "Class 4", "Class 10th", "JR.Kg"
+  const [cls] = await pool.execute('SELECT name FROM classes WHERE id = ?', [class_id]);
+  const name = cls[0]?.name || '';
+
+  // Class number from the name (Class 4 -> 4, Class 10th -> 10).
+  // Names with no digit (JR.Kg, SR.Kg) use their first 2 letters (JR, SR).
+  const digits = name.match(/\d+/);
+  const code = digits
+    ? digits[0]
+    : (name.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase() || String(class_id));
+  const prefix = `STU${code}`;
+
+  // Next number = highest existing number with this prefix + 1
+  const [rows] = await pool.execute(
+    `SELECT MAX(CAST(SUBSTRING(roll_no, ?) AS UNSIGNED)) AS maxSeq
+     FROM students
+     WHERE roll_no REGEXP ?`,
+    [prefix.length + 1, `^${prefix}[0-9]{3}$`]
+  );
+  const next = (rows[0].maxSeq || 0) + 1;
+  return `${prefix}${String(next).padStart(3, '0')}`;
 };
 
 const getTeacherClass = async (userId, role) => {
