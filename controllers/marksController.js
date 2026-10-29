@@ -122,18 +122,65 @@ exports.deleteExamType = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
+// ── TEACHER ACCESS HELPERS (marks entry) ──────────────────────
+const uidOf = (req) => req.user?.id ?? req.user?.userId ?? req.user?.user_id;
+const isTeacherRole = (req) => String(req.user.role || '').toLowerCase() === 'teacher';
+
+// Everything a teacher may touch: own class (class teacher) + every class she teaches a subject in.
+async function teacherMarksScope(req) {
+  const [u] = await pool.execute('SELECT class_assigned FROM users WHERE id=?', [uidOf(req)]);
+  const [a] = await pool.execute('SELECT class_id, subject_id FROM teacher_class_subject WHERE teacher_id=?', [uidOf(req)]);
+  const ownClass = Number(u[0]?.class_assigned) || null;
+  const classIds = new Set(a.map(r => Number(r.class_id)));
+  if (ownClass) classIds.add(ownClass);
+  return { ownClass, classIds, assignments: a };
+}
+
+// editable = subjects she can enter marks for | visible = subjects she can see (null = all)
+function teacherAccessFor(scope, classId) {
+  const editable = scope.assignments.filter(r => Number(r.class_id) === classId).map(r => Number(r.subject_id));
+  const isClassTeacher = scope.ownClass === classId;
+  return { isClassTeacher, editable, visible: isClassTeacher ? null : editable };
+}
+
+// Non-teachers: access = null (full). Teachers: access = { isClassTeacher, editable, visible }.
+async function resolveMarksAccess(req, requestedClassId) {
+  const requested = parseInt(requestedClassId) || null;
+  if (!isTeacherRole(req)) return { classId: requested, access: null };
+  const scope = await teacherMarksScope(req);
+  const classId = requested || scope.ownClass || [...scope.classIds][0] || null;
+  if (!classId) return { classId: null, access: null, none: true };
+  if (!scope.classIds.has(classId)) return { classId, access: null, forbidden: true };
+  return { classId, access: teacherAccessFor(scope, classId) };
+}
+
+// Classes shown in the Marks Entry dropdown: own class + every class she teaches a subject in.
+exports.getMyMarksClasses = async (req, res) => {
+  try {
+    if (!isTeacherRole(req)) {
+      const [all] = await pool.execute('SELECT * FROM classes ORDER BY LENGTH(name), name');
+      return res.json(all);
+    }
+    const scope = await teacherMarksScope(req);
+    const ids = [...scope.classIds];
+    if (!ids.length) return res.json([]);
+    const [rows] = await pool.query('SELECT * FROM classes WHERE id IN (?) ORDER BY LENGTH(name), name', [ids]);
+    // her own (class-teacher) class first so the page opens there; other classes are subject-teacher classes
+    const list = rows.map(r => ({ ...r, is_class_teacher: Number(r.id) === scope.ownClass }))
+                     .sort((a, b) => Number(b.is_class_teacher) - Number(a.is_class_teacher));
+    res.json(list);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
 // ── MARKS ─────────────────────────────────────────────────────
 // ── MARKS ENTRY & CUMULATIVE sheet PROCESSING ───────────────────
 exports.getMarks = async (req, res) => {
   try {
     const { class_id, exam_type_id, academic_year } = req.query;
-    const userRole = req.user.role;
-
-    let effectiveClassId = class_id;
-    if (userRole === 'Teacher' || userRole === 'teacher') {
-      const [empRows] = await pool.execute('SELECT class_assigned FROM users WHERE id=?', [req.user.id]);
-      effectiveClassId = empRows[0]?.class_assigned;
-    }
+    // Teacher access: own class (class teacher) + every class she teaches a subject in
+    const { classId: effectiveClassId, access, forbidden, none } = await resolveMarksAccess(req, class_id);
+    if (forbidden) return res.status(403).json({ message: 'You are not assigned to this class' });
+    if (none) return res.json({ students: [], subjects: [], marksMap: {}, class_id: null, editable_subject_ids: [], can_edit_remarks: false });
 
     if (!effectiveClassId) return res.status(400).json({ message: 'Please select a class' });
 
@@ -185,8 +232,15 @@ exports.getMarks = async (req, res) => {
       [effectiveClassId, exam_type_id, examName, academic_year]
     );
 
+    // Subject teacher: only own subjects. Class teacher / admin: every subject of the class.
+    const shownSubjects = access && access.visible
+      ? subjects.filter(s => access.visible.includes(Number(s.id)))
+      : subjects;
+    const shownIds = new Set(shownSubjects.map(s => Number(s.id)));
+
     const marksMap = {};
     marks.forEach(m => {
+      if (!shownIds.has(Number(m.subject_id))) return;
       if (!marksMap[m.student_id]) marksMap[m.student_id] = {};
       marksMap[m.student_id][m.subject_id] = {
         marks: m.marks_obtained,
@@ -195,23 +249,42 @@ exports.getMarks = async (req, res) => {
       };
     });
 
-    res.json({ students, subjects, marksMap });
+    res.json({
+      students,
+      subjects: shownSubjects,
+      marksMap,
+      class_id: effectiveClassId,
+      editable_subject_ids: access ? access.editable : null,   // null = every subject editable
+      can_edit_remarks: access ? access.isClassTeacher : true
+    });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
 exports.saveMarks = async (req, res) => {
   try {
     const { class_id, exam_type_id, academic_year, marks } = req.body;
-    const userRole = req.user.role;
+    if (!Array.isArray(marks)) return res.status(400).json({ message: 'Marks data required' });
 
-    let effectiveClassId = class_id;
-    if (userRole === 'Teacher' || userRole === 'teacher') {
-      const [empRows] = await pool.execute('SELECT class_assigned FROM users WHERE id=?', [req.user.id]);
-      effectiveClassId = empRows[0]?.class_assigned;
-    }
+    // Teacher access: only own / assigned classes, and only assigned subjects
+    const resolved = await resolveMarksAccess(req, class_id);
+    if (resolved.forbidden || resolved.none) return res.status(403).json({ message: 'You are not assigned to this class' });
+    const access = resolved.access;
 
-    effectiveClassId = parseInt(effectiveClassId);
+    const effectiveClassId = parseInt(resolved.classId);
     if (!effectiveClassId) return res.status(400).json({ message: 'Class ID required' });
+
+    if (access) {
+      // 1) only subjects assigned to this teacher in this class (class teacher's other subjects are view-only)
+      if (marks.some(m => !access.editable.includes(Number(m.subject_id)))) {
+        return res.status(403).json({ message: 'You can only enter marks for your assigned subjects' });
+      }
+      // 2) students must belong to this class
+      const [stu] = await pool.execute('SELECT id FROM students WHERE class_id = ?', [effectiveClassId]);
+      const okStudents = new Set(stu.map(r => Number(r.id)));
+      if (marks.some(m => !okStudents.has(Number(m.student_id)))) {
+        return res.status(403).json({ message: 'Invalid student for this class' });
+      }
+    }
 
     let examName = exam_type_id;
     let numericExamId = isNaN(parseInt(exam_type_id)) ? null : parseInt(exam_type_id);
@@ -272,13 +345,16 @@ exports.getMarksheet = async (req, res) => {
   try {
     const { exam_type_id, academic_year, student_id } = req.query;
     let { class_id } = req.query;
-    const userRole = req.user.role;
 
-    if (userRole === 'Teacher' || userRole === 'teacher') {
-      const [empRows] = await pool.execute(
-        'SELECT class_assigned FROM users WHERE id=?', [req.user.id]
-      );
-      class_id = empRows[0]?.class_assigned;
+    // Teachers: own class (class teacher -> every subject) or a class where she teaches a subject (-> only those subjects)
+    let access = null;
+    if (isTeacherRole(req)) {
+      const r = await resolveMarksAccess(req, req.query.class_id);
+      if (r.forbidden) return res.status(403).json({ message: 'You are not assigned to this class' });
+      if (r.none) return res.status(400).json({ message: 'No class assigned. Please contact admin.' });
+      class_id = r.classId;
+      access = r.access;
+      if (access.visible && !access.visible.length) return res.json([]);
     }
 
     if (!class_id) return res.status(400).json({ message: 'No class assigned. Please contact admin.' });
@@ -370,7 +446,11 @@ exports.getMarksheet = async (req, res) => {
     // cfg now matches on each row's OWN resolved exam name (r.exam_type_name) instead of comparing
     // a text exam name to a numeric exam_type_id (which could never match), so each underlying exam
     // (Unit Test 1, Unit Test 2, Semester 1...) picks up its correct max/pass marks when cumulative.
-    const updatedRows = rows.map(r => {
+    // Subject teacher view: only the subjects assigned to her (class teacher / admin see every subject)
+    const restricted = !!(access && access.visible);
+    const visibleRows = restricted ? rows.filter(r => access.visible.includes(Number(r.subject_id))) : rows;
+
+    const updatedRows = visibleRows.map(r => {
       const cfg = configRows.find(c => c.subject_id === r.subject_id && String(c.exam_type).toLowerCase() === String(r.exam_type_name).toLowerCase());
       const subjectDefault = subjectDefaults.find(d => d.subject_id === r.subject_id);
 
@@ -378,11 +458,85 @@ exports.getMarksheet = async (req, res) => {
         ...r,
         max_marks: cfg ? cfg.max_marks : (subjectDefault ? subjectDefault.max_marks : 100),
         pass_marks: cfg ? cfg.pass_marks : (subjectDefault ? subjectDefault.pass_marks : 35),
-        overall_remark: remarksMap[r.student_id] || null
+        overall_remark: restricted ? null : (remarksMap[r.student_id] || null),
+        restricted_view: restricted
       };
     });
 
-    res.json(updatedRows);
+    // ── Extra marksheet fields: school profile, student details, yearly attendance, final-report remark ──
+    let school = { school_name: '', address: '', academic_year: '', reopen_date: null };
+    let schoolLogo = null;
+    try {
+      const [sRows] = await pool.execute(
+        `SELECT school_name, address, academic_year,
+                DATE_FORMAT(reopen_date, '%Y-%m-%d') AS reopen_date
+         FROM school_settings WHERE id = 1`
+      );
+      if (sRows[0]) school = sRows[0];
+      // logo: checks the common column names in school_settings
+      const [lg] = await pool.execute('SELECT * FROM school_settings WHERE id = 1');
+      const sr = lg[0] || {};
+      schoolLogo = sr.logo ?? sr.logo_url ?? sr.school_logo ?? sr.logo_path ?? null;
+      if (Buffer.isBuffer(schoolLogo)) schoolLogo = 'data:image/png;base64,' + schoolLogo.toString('base64');
+    } catch (e) {}
+
+    // Extra student details (read defensively, column names may differ)
+    const extras = {};
+    try {
+      const [stuRows] = await pool.execute('SELECT * FROM students WHERE class_id = ?', [class_id]);
+      stuRows.forEach(s => { extras[s.id] = s; });
+    } catch (e) {}
+
+    // Yearly attendance (present / total days) for the academic year, 1 April - 31 March
+    const attendanceMap = {};
+    try {
+      const [ayStart, ayEnd] = String(academic_year).split('-').map(Number);
+      if (ayStart && ayEnd) {
+        const [attRows] = await pool.execute(
+          `SELECT a.person_id AS student_id,
+                  COUNT(CASE WHEN a.status = 'present' THEN 1 END) AS present_days,
+                  COUNT(a.id) AS total_days
+           FROM attendance a
+           JOIN students s ON a.person_id = s.id
+           WHERE a.person_type = 'student' AND s.class_id = ?
+             AND a.attendance_date >= ? AND a.attendance_date <= ?
+           GROUP BY a.person_id`,
+          [class_id, `${ayStart}-04-01`, `${ayEnd}-03-31`]
+        );
+        attRows.forEach(a => { attendanceMap[a.student_id] = `${a.present_days} / ${a.total_days}`; });
+      }
+    } catch (e) {}
+
+    // Final Report has no exam type of its own, so use the latest saved remark
+    const finalRemarks = {};
+    if (!numericExamId || isNaN(numericExamId)) {
+      try {
+        const [rr] = await pool.execute(
+          `SELECT student_id, overall_remark FROM student_exam_remarks
+           WHERE class_id = ? AND academic_year = ? AND overall_remark <> ''
+           ORDER BY exam_type_id`,
+          [class_id, academic_year]
+        );
+        rr.forEach(x => { finalRemarks[x.student_id] = x.overall_remark; });
+      } catch (e) {}
+    }
+
+    res.json(updatedRows.map(r => {
+      const ex = extras[r.student_id] || {};
+      return {
+        ...r,
+        overall_remark: restricted ? null : (r.overall_remark || finalRemarks[r.student_id] || null),
+        school_name: school.school_name,
+        school_address: school.address,
+        school_academic_year: school.academic_year,
+        school_reopen_date: school.reopen_date,
+        school_logo: schoolLogo,
+        gr_no: ex.gr_no ?? ex.gr_number ?? null,
+        mother_name: ex.mother_name ?? null,
+        dob: ex.dob ?? ex.date_of_birth ?? null,
+        yearly_attendance: attendanceMap[r.student_id] || null
+      };
+    }));
   } catch (err) {
     console.error('getMarksheet Cumulative Matrix Error:', err.message);
     res.status(500).json({ message: err.message });
@@ -413,13 +567,9 @@ exports.saveTeacherAssignedSubjects = async (req, res) => {
 exports.getRemarks = async (req, res) => {
   try {
     const { class_id, exam_type_id, academic_year } = req.query;
-    const userRole = req.user.role;
-    let effectiveClassId = class_id;
-    if (userRole === 'Teacher' || userRole === 'teacher') {
-      const [empRows] = await pool.execute('SELECT class_assigned FROM users WHERE id=?', [req.user.id]);
-      effectiveClassId = empRows[0]?.class_assigned;
-    }
-    effectiveClassId = parseInt(effectiveClassId);
+    // Overall remarks belong to the class teacher (and admin/principal) only
+    const { classId: effectiveClassId, access, forbidden, none } = await resolveMarksAccess(req, class_id);
+    if (forbidden || none || (access && !access.isClassTeacher)) return res.json({});
     if (!effectiveClassId || isNaN(effectiveClassId)) return res.json({});
     const [rows] = await pool.execute(`SELECT * FROM student_exam_remarks WHERE class_id = ? AND exam_type_id = ? AND academic_year = ?`, [effectiveClassId, exam_type_id, academic_year]);
     const map = {};
@@ -430,13 +580,12 @@ exports.getRemarks = async (req, res) => {
 exports.saveRemarks = async (req, res) => {
   try {
     const { class_id, exam_type_id, academic_year, remarks } = req.body;
-    const userRole = req.user.role;
-    let effectiveClassId = class_id;
-    if (userRole === 'Teacher' || userRole === 'teacher') {
-      const [empRows] = await pool.execute('SELECT class_assigned FROM users WHERE id=?', [req.user.id]);
-      effectiveClassId = empRows[0]?.class_assigned;
+    const resolved = await resolveMarksAccess(req, class_id);
+    // Overall remarks belong to the class teacher (and admin/principal) only
+    if (resolved.forbidden || resolved.none || (resolved.access && !resolved.access.isClassTeacher)) {
+      return res.status(403).json({ message: 'Only the class teacher can enter overall remarks' });
     }
-    effectiveClassId = parseInt(effectiveClassId);
+    const effectiveClassId = parseInt(resolved.classId);
     if (!effectiveClassId || isNaN(effectiveClassId)) return res.status(400).json({ message: 'Invalid class ID.' });
     for (const { student_id, overall_remark } of remarks) {
       await pool.execute(`INSERT INTO student_exam_remarks (student_id, class_id, exam_type_id, academic_year, overall_remark, marked_by) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE overall_remark=?, marked_by=?`, [student_id, effectiveClassId, exam_type_id, academic_year, overall_remark || '', req.user.id, overall_remark || '', req.user.id]);
