@@ -158,7 +158,7 @@ router.post('/teacher-assigned-subjects', authenticateToken, safeCall(marksContr
 router.get('/broadcasts', authenticateToken, safeCall(broadcastController.getBroadcasts));
 router.post('/broadcasts', authenticateToken, uploadBroadcastMedia, safeCall(broadcastController.sendBroadcast));
 router.post('/broadcasts/whatsapp', authenticateToken, uploadBroadcastMedia, safeCall(broadcastController.sendWhatsAppBroadcast));
-router.delete('/broadcasts/:id', authenticateToken, safeCall(broadcastController.deleteBroadcast));
+router.delete('/broadcasts/:id', authenticateToken, requireRole('admin', 'principal', 'teacher'), safeCall(broadcastController.deleteBroadcast));
 
 // Teacher → Class → Subject assignments
 router.get('/config/teacher-assignments', authenticateToken, requireRole('admin'), safeCall(teacherAssignmentController.getTeacherAssignments));
