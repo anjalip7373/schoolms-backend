@@ -58,13 +58,24 @@ exports.addTeacherAssignment = async (req, res) => {
     );
     if (!cs.length) return res.status(400).json({ message: 'This subject is not assigned to the selected class' });
 
+    // Duplicate check — same teacher + class + subject already assigned
+    const [dup] = await pool.execute(
+      'SELECT id FROM teacher_class_subject WHERE teacher_id = ? AND class_id = ? AND subject_id = ?',
+      [teacher_id, class_id, subject_id]
+    );
+    if (dup.length) {
+      return res.status(409).json({ message: 'This Teacher + Class + Subject assignment already exists.' });
+    }
+
     await pool.execute(
-      `INSERT INTO teacher_class_subject (teacher_id, class_id, subject_id) VALUES (?,?,?)
-       ON DUPLICATE KEY UPDATE subject_id = VALUES(subject_id)`,
+      'INSERT INTO teacher_class_subject (teacher_id, class_id, subject_id) VALUES (?,?,?)',
       [teacher_id, class_id, subject_id]
     );
     res.json({ message: 'Assigned to teacher' });
   } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'This Teacher + Class + Subject assignment already exists.' });
+    }
     res.status(500).json({ message: err.message });
   }
 };
