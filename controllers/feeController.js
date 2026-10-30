@@ -387,6 +387,7 @@ exports.getAllStudentsWithFeeStatus = async (req, res) => {
         COALESCE(SUM(fp.amount), 0) as paid_amount,
         COUNT(fp.id) as payment_count,
         GROUP_CONCAT(DISTINCT ft.name ORDER BY fp.payment_date SEPARATOR ', ') as fee_types_paid,
+        GROUP_CONCAT(DISTINCT fp.receipt_no ORDER BY fp.receipt_no SEPARATOR ', ') as receipt_no,
         MAX(fp.payment_date) as last_payment_date,
         MAX(fp.payment_method) as payment_method,
         CASE WHEN COUNT(fp.id) > 0 THEN 'Paid' ELSE 'Unpaid' END as fee_status
