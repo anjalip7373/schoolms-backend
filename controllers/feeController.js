@@ -410,11 +410,11 @@ exports.getAllStudentsWithFeeStatus = async (req, res) => {
       params.push(effectiveClassId);
     }
 
-    query += ` GROUP BY s.id, s.roll_no, s.full_name, c.name,  s.deactivated_date
+    query += ` GROUP BY s.id, s.roll_no, s.full_name, c.name,  s.deactivated_date${req.query.by_receipt === '1' ? ', fp.receipt_no' : ''}
     
                ORDER BY 
                  CASE WHEN COUNT(fp.id) > 0 THEN 0 ELSE 1 END,
-                 c.name, s.roll_no`;
+                 c.name, s.roll_no, receipt_no`;
 
     console.log('Executing fee status query with params:', params);
     const [rows] = await pool.execute(query, params);
